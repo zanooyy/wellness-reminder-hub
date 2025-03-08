@@ -10,7 +10,8 @@ import { useAuth } from "@/hooks/useAuth";
 import { supabase, Reminder } from "@/utils/supabase";
 import { toast } from "sonner";
 import { 
-  AlarmClockCheck, AlarmPlus, Clock, Pill, Trash, Edit, AlertCircle, Calendar, MoveHorizontal
+  AlarmClockCheck, AlarmPlus, Clock, Pill, Trash, Edit, AlertCircle, Calendar, MoveHorizontal,
+  Bell, BellRing, Filter, ArrowUpDown
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { format } from "date-fns";
@@ -21,6 +22,8 @@ export function MedicineReminder() {
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
   const [currentReminder, setCurrentReminder] = useState<Reminder | null>(null);
+  const [sortOrder, setSortOrder] = useState<"time" | "name">("time");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [formData, setFormData] = useState({
     medicine_name: "",
     dosage: "",
@@ -36,6 +39,85 @@ export function MedicineReminder() {
     fetchReminders();
   }, [user]);
 
+  // Check for due reminders
+  useEffect(() => {
+    if (reminders.length === 0) return;
+    
+    // Check if there are any reminders due now
+    const currentTime = new Date();
+    const currentHour = currentTime.getHours().toString().padStart(2, '0');
+    const currentMinute = currentTime.getMinutes().toString().padStart(2, '0');
+    const timeNow = `${currentHour}:${currentMinute}`;
+    
+    const dueReminders = reminders.filter(reminder => {
+      // Check if the time is within 1 minute of the current time
+      const [reminderHour, reminderMinute] = reminder.time.split(':');
+      const reminderDate = new Date();
+      reminderDate.setHours(parseInt(reminderHour), parseInt(reminderMinute));
+      
+      const diffMs = Math.abs(currentTime.getTime() - reminderDate.getTime());
+      const diffMinutes = Math.floor(diffMs / 60000);
+      
+      return diffMinutes < 1;
+    });
+    
+    if (dueReminders.length > 0) {
+      dueReminders.forEach(reminder => {
+        toast.info(
+          <div className="flex flex-col gap-1">
+            <div className="font-bold">Medicine Reminder</div>
+            <div>Time to take {reminder.medicine_name}</div>
+            {reminder.dosage && <div className="text-sm">Dosage: {reminder.dosage}</div>}
+          </div>,
+          {
+            duration: 10000,
+            icon: <BellRing className="h-5 w-5 text-blue-500" />,
+            action: {
+              label: "Dismiss",
+              onClick: () => console.log("Dismissed reminder"),
+            }
+          }
+        );
+      });
+    }
+    
+    // Set up check for the next minute
+    const timeout = setTimeout(() => {
+      checkDueReminders();
+    }, 60000);
+    
+    return () => clearTimeout(timeout);
+  }, [reminders]);
+  
+  const checkDueReminders = () => {
+    if (reminders.length === 0) return;
+    
+    const currentTime = new Date();
+    const currentHour = currentTime.getHours().toString().padStart(2, '0');
+    const currentMinute = currentTime.getMinutes().toString().padStart(2, '0');
+    const timeNow = `${currentHour}:${currentMinute}`;
+    
+    reminders.forEach(reminder => {
+      if (reminder.time === timeNow) {
+        toast.info(
+          <div className="flex flex-col gap-1">
+            <div className="font-bold">Medicine Reminder</div>
+            <div>Time to take {reminder.medicine_name}</div>
+            {reminder.dosage && <div className="text-sm">Dosage: {reminder.dosage}</div>}
+          </div>,
+          {
+            duration: 10000,
+            icon: <BellRing className="h-5 w-5 text-blue-500" />,
+            action: {
+              label: "Dismiss",
+              onClick: () => console.log("Dismissed reminder"),
+            }
+          }
+        );
+      }
+    });
+  };
+
   // Fetch reminders from Supabase
   const fetchReminders = async () => {
     setLoading(true);
@@ -44,7 +126,7 @@ export function MedicineReminder() {
         .from("reminders")
         .select("*")
         .eq("user_id", user?.id)
-        .order("time", { ascending: true });
+        .order(sortOrder, { ascending: sortDirection === "asc" });
 
       if (error) throw error;
       
@@ -163,6 +245,19 @@ export function MedicineReminder() {
     }
   };
 
+  // Toggle sort order
+  const toggleSort = (field: "time" | "name") => {
+    if (sortOrder === field) {
+      setSortDirection(sortDirection === "asc" ? "desc" : "asc");
+    } else {
+      setSortOrder(field);
+      setSortDirection("asc");
+    }
+    
+    // Re-fetch reminders with new sort
+    fetchReminders();
+  };
+
   // Format time for display
   const formatTime = (timeString: string) => {
     try {
@@ -204,116 +299,142 @@ export function MedicineReminder() {
           </p>
         </div>
         
-        <Dialog open={openDialog} onOpenChange={setOpenDialog}>
-          <DialogTrigger asChild>
+        <div className="flex flex-wrap gap-2">
+          <div className="flex items-center space-x-2">
             <Button
-              onClick={() => {
-                resetForm();
-                setOpenDialog(true);
-              }}
+              variant="outline"
+              size="sm"
+              onClick={() => toggleSort("time")}
+              className="flex items-center gap-1 text-xs"
             >
-              <AlarmPlus className="mr-2 h-4 w-4" />
-              Add Reminder
+              <Clock className="h-3.5 w-3.5" />
+              Time
+              <ArrowUpDown className={`h-3 w-3 ${sortOrder === "time" ? "opacity-100" : "opacity-50"}`} />
             </Button>
-          </DialogTrigger>
-          
-          <DialogContent className="sm:max-w-[425px]">
-            <DialogHeader>
-              <DialogTitle>{currentReminder ? "Edit Reminder" : "Add Reminder"}</DialogTitle>
-              <DialogDescription>
-                {currentReminder
-                  ? "Update your medicine reminder details."
-                  : "Create a new medicine reminder."}
-              </DialogDescription>
-            </DialogHeader>
             
-            <form onSubmit={handleSubmit} className="space-y-4 mt-4">
-              <div className="form-input-wrapper">
-                <Label htmlFor="medicine_name" className="form-label">
-                  Medicine Name
-                </Label>
-                <Input
-                  id="medicine_name"
-                  name="medicine_name"
-                  placeholder="e.g., Aspirin"
-                  value={formData.medicine_name}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => toggleSort("name")}
+              className="flex items-center gap-1 text-xs"
+            >
+              <Pill className="h-3.5 w-3.5" />
+              Name
+              <ArrowUpDown className={`h-3 w-3 ${sortOrder === "name" ? "opacity-100" : "opacity-50"}`} />
+            </Button>
+          </div>
+          
+          <Dialog open={openDialog} onOpenChange={setOpenDialog}>
+            <DialogTrigger asChild>
+              <Button
+                onClick={() => {
+                  resetForm();
+                  setOpenDialog(true);
+                }}
+              >
+                <AlarmPlus className="mr-2 h-4 w-4" />
+                Add Reminder
+              </Button>
+            </DialogTrigger>
+            
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>{currentReminder ? "Edit Reminder" : "Add Reminder"}</DialogTitle>
+                <DialogDescription>
+                  {currentReminder
+                    ? "Update your medicine reminder details."
+                    : "Create a new medicine reminder."}
+                </DialogDescription>
+              </DialogHeader>
               
-              <div className="form-input-wrapper">
-                <Label htmlFor="dosage" className="form-label">
-                  Dosage
-                </Label>
-                <Input
-                  id="dosage"
-                  name="dosage"
-                  placeholder="e.g., 500mg, 1 tablet"
-                  value={formData.dosage}
-                  onChange={handleChange}
-                />
-              </div>
-              
-              <div className="form-input-wrapper">
-                <Label htmlFor="frequency" className="form-label">
-                  Frequency
-                </Label>
-                <Select
-                  value={formData.frequency}
-                  onValueChange={handleFrequencyChange}
-                >
-                  <SelectTrigger id="frequency">
-                    <SelectValue placeholder="Select frequency" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
-                    <SelectItem value="as-needed">As Needed</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              
-              <div className="form-input-wrapper">
-                <Label htmlFor="time" className="form-label">
-                  Time
-                </Label>
-                <Input
-                  id="time"
-                  name="time"
-                  type="time"
-                  value={formData.time}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-              
-              <div className="form-input-wrapper">
-                <Label htmlFor="notes" className="form-label">
-                  Notes
-                </Label>
-                <Textarea
-                  id="notes"
-                  name="notes"
-                  placeholder="Additional instructions or notes..."
-                  value={formData.notes}
-                  onChange={handleChange}
-                  rows={3}
-                />
-              </div>
-              
-              <DialogFooter className="mt-6">
-                <Button type="button" variant="outline" onClick={() => setOpenDialog(false)}>
-                  Cancel
-                </Button>
-                <Button type="submit">
-                  {currentReminder ? "Update Reminder" : "Add Reminder"}
-                </Button>
-              </DialogFooter>
-            </form>
-          </DialogContent>
-        </Dialog>
+              <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+                <div className="form-input-wrapper">
+                  <Label htmlFor="medicine_name" className="form-label">
+                    Medicine Name
+                  </Label>
+                  <Input
+                    id="medicine_name"
+                    name="medicine_name"
+                    placeholder="e.g., Aspirin"
+                    value={formData.medicine_name}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+                
+                <div className="form-input-wrapper">
+                  <Label htmlFor="dosage" className="form-label">
+                    Dosage
+                  </Label>
+                  <Input
+                    id="dosage"
+                    name="dosage"
+                    placeholder="e.g., 500mg, 1 tablet"
+                    value={formData.dosage}
+                    onChange={handleChange}
+                  />
+                </div>
+                
+                <div className="form-input-wrapper">
+                  <Label htmlFor="frequency" className="form-label">
+                    Frequency
+                  </Label>
+                  <Select
+                    value={formData.frequency}
+                    onValueChange={handleFrequencyChange}
+                  >
+                    <SelectTrigger id="frequency">
+                      <SelectValue placeholder="Select frequency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="daily">Daily</SelectItem>
+                      <SelectItem value="weekly">Weekly</SelectItem>
+                      <SelectItem value="monthly">Monthly</SelectItem>
+                      <SelectItem value="as-needed">As Needed</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="form-input-wrapper">
+                  <Label htmlFor="time" className="form-label">
+                    Time
+                  </Label>
+                  <Input
+                    id="time"
+                    name="time"
+                    type="time"
+                    value={formData.time}
+                    onChange={handleChange}
+                    required
+                  />
+                </div>
+                
+                <div className="form-input-wrapper">
+                  <Label htmlFor="notes" className="form-label">
+                    Notes
+                  </Label>
+                  <Textarea
+                    id="notes"
+                    name="notes"
+                    placeholder="Additional instructions or notes..."
+                    value={formData.notes}
+                    onChange={handleChange}
+                    rows={3}
+                  />
+                </div>
+                
+                <DialogFooter className="mt-6">
+                  <Button type="button" variant="outline" onClick={() => setOpenDialog(false)}>
+                    Cancel
+                  </Button>
+                  <Button type="submit">
+                    {currentReminder ? "Update Reminder" : "Add Reminder"}
+                  </Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
+        </div>
       </div>
 
       {loading ? (
@@ -342,7 +463,7 @@ export function MedicineReminder() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {reminders.map((reminder) => (
-            <Card key={reminder.id} className="overflow-hidden animate-scale-in card-hover">
+            <Card key={reminder.id} className="overflow-hidden hover:shadow-md transition-shadow border-l-4" style={{ borderLeftColor: getBorderColor(reminder.frequency) }}>
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-start justify-between">
                   <div className="flex items-center">
@@ -403,6 +524,14 @@ export function MedicineReminder() {
                   <Calendar className="h-3.5 w-3.5 mr-1" />
                   Created {new Date(reminder.created_at).toLocaleDateString()}
                 </span>
+                <span className="flex items-center">
+                  <Bell className="h-3.5 w-3.5 mr-1" />
+                  {isReminderDueSoon(reminder.time) ? (
+                    <span className="text-orange-500 font-medium">Due soon</span>
+                  ) : (
+                    <span>Scheduled</span>
+                  )}
+                </span>
               </CardFooter>
             </Card>
           ))}
@@ -410,4 +539,31 @@ export function MedicineReminder() {
       )}
     </div>
   );
+}
+
+// Helper function to check if a reminder is due soon (within 30 minutes)
+function isReminderDueSoon(reminderTime: string): boolean {
+  const [hours, minutes] = reminderTime.split(':').map(Number);
+  const reminderDate = new Date();
+  reminderDate.setHours(hours, minutes, 0, 0);
+  
+  const now = new Date();
+  const timeDiff = reminderDate.getTime() - now.getTime();
+  
+  // If reminder is in the past (today), it's not "due soon"
+  if (timeDiff < 0) return false;
+  
+  // If reminder is within 30 minutes, it's "due soon"
+  return timeDiff <= 30 * 60 * 1000;
+}
+
+// Helper function to get border color based on frequency
+function getBorderColor(frequency: string): string {
+  switch (frequency) {
+    case 'daily': return '#3b82f6'; // blue-500
+    case 'weekly': return '#8b5cf6'; // purple-500
+    case 'monthly': return '#f59e0b'; // amber-500
+    case 'as-needed': return '#6b7280'; // gray-500
+    default: return '#3b82f6'; // blue-500
+  }
 }
