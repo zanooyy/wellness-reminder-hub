@@ -1,5 +1,4 @@
-
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,10 +10,11 @@ import { supabase, Reminder } from "@/utils/supabase";
 import { toast } from "sonner";
 import { 
   AlarmClockCheck, AlarmPlus, Clock, Pill, Trash, Edit, AlertCircle, Calendar, MoveHorizontal,
-  Bell, BellRing, Filter, ArrowUpDown
+  Bell, BellRing, Filter, ArrowUpDown, VolumeX, Volume2
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { format } from "date-fns";
+import { Switch } from "@/components/ui/switch";
 
 export function MedicineReminder() {
   const { user } = useAuth();
@@ -24,6 +24,9 @@ export function MedicineReminder() {
   const [currentReminder, setCurrentReminder] = useState<Reminder | null>(null);
   const [sortOrder, setSortOrder] = useState<"time" | "name">("time");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [activeAlarms, setActiveAlarms] = useState<string[]>([]);
   const [formData, setFormData] = useState({
     medicine_name: "",
     dosage: "",
@@ -32,6 +35,21 @@ export function MedicineReminder() {
     notes: "",
   });
 
+  // Initialize alarm sound
+  useEffect(() => {
+    // Create audio element for alarm
+    alarmAudioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
+    alarmAudioRef.current.loop = false;
+    
+    // Clean up on component unmount
+    return () => {
+      if (alarmAudioRef.current) {
+        alarmAudioRef.current.pause();
+        alarmAudioRef.current = null;
+      }
+    };
+  }, []);
+
   // Fetch reminders on component mount
   useEffect(() => {
     if (!user) return;
@@ -39,11 +57,55 @@ export function MedicineReminder() {
     fetchReminders();
   }, [user]);
 
-  // Check for due reminders
+  // Check for due reminders every minute
   useEffect(() => {
     if (reminders.length === 0) return;
     
-    // Check if there are any reminders due now
+    const checkInterval = setInterval(() => {
+      checkDueReminders();
+    }, 30000); // Check every 30 seconds
+    
+    // Initial check when component mounts or reminders change
+    checkDueReminders();
+    
+    return () => clearInterval(checkInterval);
+  }, [reminders, soundEnabled]);
+  
+  // Play alarm sound for a specific reminder
+  const playAlarmSound = (reminderId: string) => {
+    if (!soundEnabled || !alarmAudioRef.current) return;
+    
+    // Only play if not already playing for this reminder
+    if (!activeAlarms.includes(reminderId)) {
+      setActiveAlarms(prev => [...prev, reminderId]);
+      
+      // Play the alarm sound
+      if (alarmAudioRef.current) {
+        alarmAudioRef.current.currentTime = 0;
+        alarmAudioRef.current.play()
+          .catch(err => console.error("Error playing alarm sound:", err));
+      }
+      
+      // Remove from active alarms after sound completes
+      setTimeout(() => {
+        setActiveAlarms(prev => prev.filter(id => id !== reminderId));
+      }, 5000); // Assuming the alarm sound is around 5 seconds
+    }
+  };
+  
+  // Stop all alarm sounds
+  const stopAllAlarms = () => {
+    if (alarmAudioRef.current) {
+      alarmAudioRef.current.pause();
+      alarmAudioRef.current.currentTime = 0;
+    }
+    setActiveAlarms([]);
+  };
+
+  // Check for due reminders
+  const checkDueReminders = () => {
+    if (reminders.length === 0) return;
+    
     const currentTime = new Date();
     const currentHour = currentTime.getHours().toString().padStart(2, '0');
     const currentMinute = currentTime.getMinutes().toString().padStart(2, '0');
@@ -63,6 +125,10 @@ export function MedicineReminder() {
     
     if (dueReminders.length > 0) {
       dueReminders.forEach(reminder => {
+        // Play alarm sound
+        playAlarmSound(reminder.id);
+        
+        // Show toast notification
         toast.info(
           <div className="flex flex-col gap-1">
             <div className="font-bold">Medicine Reminder</div>
@@ -74,48 +140,15 @@ export function MedicineReminder() {
             icon: <BellRing className="h-5 w-5 text-blue-500" />,
             action: {
               label: "Dismiss",
-              onClick: () => console.log("Dismissed reminder"),
+              onClick: () => {
+                stopAllAlarms();
+                console.log("Dismissed reminder");
+              },
             }
           }
         );
       });
     }
-    
-    // Set up check for the next minute
-    const timeout = setTimeout(() => {
-      checkDueReminders();
-    }, 60000);
-    
-    return () => clearTimeout(timeout);
-  }, [reminders]);
-  
-  const checkDueReminders = () => {
-    if (reminders.length === 0) return;
-    
-    const currentTime = new Date();
-    const currentHour = currentTime.getHours().toString().padStart(2, '0');
-    const currentMinute = currentTime.getMinutes().toString().padStart(2, '0');
-    const timeNow = `${currentHour}:${currentMinute}`;
-    
-    reminders.forEach(reminder => {
-      if (reminder.time === timeNow) {
-        toast.info(
-          <div className="flex flex-col gap-1">
-            <div className="font-bold">Medicine Reminder</div>
-            <div>Time to take {reminder.medicine_name}</div>
-            {reminder.dosage && <div className="text-sm">Dosage: {reminder.dosage}</div>}
-          </div>,
-          {
-            duration: 10000,
-            icon: <BellRing className="h-5 w-5 text-blue-500" />,
-            action: {
-              label: "Dismiss",
-              onClick: () => console.log("Dismissed reminder"),
-            }
-          }
-        );
-      }
-    });
   };
 
   // Fetch reminders from Supabase
@@ -289,6 +322,18 @@ export function MedicineReminder() {
     );
   };
 
+  // Toggle sound
+  const toggleSound = () => {
+    setSoundEnabled(!soundEnabled);
+    
+    if (!soundEnabled) {
+      toast.success("Alarm sounds enabled");
+    } else {
+      stopAllAlarms();
+      toast.success("Alarm sounds disabled");
+    }
+  };
+
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -299,7 +344,20 @@ export function MedicineReminder() {
           </p>
         </div>
         
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex items-center space-x-2 mr-2">
+            <button 
+              className="flex items-center space-x-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+              onClick={toggleSound}
+            >
+              {soundEnabled ? (
+                <><Volume2 className="h-4 w-4" /><span>Sound On</span></>
+              ) : (
+                <><VolumeX className="h-4 w-4" /><span>Sound Off</span></>
+              )}
+            </button>
+          </div>
+          
           <div className="flex items-center space-x-2">
             <Button
               variant="outline"
@@ -437,6 +495,9 @@ export function MedicineReminder() {
         </div>
       </div>
 
+      {/* Hidden audio element for notification sound */}
+      <audio id="reminder-sound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" />
+
       {loading ? (
         <div className="flex justify-center p-8">
           <div className="animate-pulse text-primary">Loading reminders...</div>
@@ -463,7 +524,13 @@ export function MedicineReminder() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {reminders.map((reminder) => (
-            <Card key={reminder.id} className="overflow-hidden hover:shadow-md transition-shadow border-l-4" style={{ borderLeftColor: getBorderColor(reminder.frequency) }}>
+            <Card 
+              key={reminder.id} 
+              className={`overflow-hidden hover:shadow-md transition-shadow border-l-4 ${
+                activeAlarms.includes(reminder.id) ? "animate-pulse" : ""
+              }`} 
+              style={{ borderLeftColor: getBorderColor(reminder.frequency) }}
+            >
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-start justify-between">
                   <div className="flex items-center">
