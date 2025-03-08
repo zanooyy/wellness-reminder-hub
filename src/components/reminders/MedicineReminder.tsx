@@ -1,3 +1,4 @@
+
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,7 @@ export function MedicineReminder() {
   const [sortOrder, setSortOrder] = useState<"time" | "name">("time");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
   const [activeAlarms, setActiveAlarms] = useState<string[]>([]);
   const [formData, setFormData] = useState({
@@ -34,6 +36,92 @@ export function MedicineReminder() {
     time: "",
     notes: "",
   });
+
+  // Initialize notifications
+  useEffect(() => {
+    checkNotificationPermission();
+
+    // Add event listener for when the page is about to be closed
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    
+    // Clean up on component unmount
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, []);
+
+  // Check notification permission and update state
+  const checkNotificationPermission = () => {
+    if (!("Notification" in window)) {
+      console.log("This browser does not support notifications");
+      return;
+    }
+
+    if (Notification.permission === "granted") {
+      setNotificationsEnabled(true);
+    }
+  };
+
+  // Request notification permission
+  const requestNotificationPermission = async () => {
+    if (!("Notification" in window)) {
+      toast.error("This browser does not support notifications");
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        setNotificationsEnabled(true);
+        toast.success("Notifications enabled");
+        
+        // Send a test notification
+        new Notification("Medicine Reminder", {
+          body: "You will now receive notifications for your medicine reminders",
+          icon: "/favicon.ico"
+        });
+      } else {
+        toast.error("Notification permission denied");
+      }
+    } catch (error) {
+      console.error("Error requesting notification permission:", error);
+      toast.error("Could not request notification permission");
+    }
+  };
+
+  // Handle page close/refresh event
+  const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+    // Check if there are any upcoming reminders in the next hour
+    const upcomingReminders = getUpcomingReminders(60); // 60 minutes
+    
+    if (upcomingReminders.length > 0 && notificationsEnabled) {
+      // Send notification about upcoming reminders
+      const nextReminder = upcomingReminders[0];
+      new Notification("Medicine Reminder - App Closed", {
+        body: `Don't forget: ${nextReminder.medicine_name} at ${formatTime(nextReminder.time)}${upcomingReminders.length > 1 ? ` and ${upcomingReminders.length - 1} more reminders` : ''}`,
+        icon: "/favicon.ico"
+      });
+    }
+  };
+
+  // Get upcoming reminders within specified minutes
+  const getUpcomingReminders = (withinMinutes: number): Reminder[] => {
+    if (reminders.length === 0) return [];
+    
+    const now = new Date();
+    const cutoffTime = new Date(now.getTime() + withinMinutes * 60000);
+    
+    return reminders.filter(reminder => {
+      const [hours, minutes] = reminder.time.split(':').map(Number);
+      const reminderTime = new Date();
+      reminderTime.setHours(hours, minutes, 0, 0);
+      
+      // If the reminder time has already passed today, don't include it
+      if (reminderTime < now) return false;
+      
+      return reminderTime <= cutoffTime;
+    });
+  };
 
   // Initialize alarm sound
   useEffect(() => {
@@ -69,7 +157,7 @@ export function MedicineReminder() {
     checkDueReminders();
     
     return () => clearInterval(checkInterval);
-  }, [reminders, soundEnabled]);
+  }, [reminders, soundEnabled, notificationsEnabled]);
   
   // Play alarm sound for a specific reminder
   const playAlarmSound = (reminderId: string) => {
@@ -147,6 +235,14 @@ export function MedicineReminder() {
             }
           }
         );
+        
+        // Send browser notification if enabled
+        if (notificationsEnabled) {
+          new Notification(`Time to take ${reminder.medicine_name}`, {
+            body: reminder.dosage ? `Dosage: ${reminder.dosage}` : "",
+            icon: "/favicon.ico"
+          });
+        }
       });
     }
   };
@@ -358,6 +454,16 @@ export function MedicineReminder() {
             </button>
           </div>
           
+          <div className="flex items-center space-x-2 mr-2">
+            <button 
+              className={`flex items-center space-x-2 text-sm ${notificationsEnabled ? 'text-primary' : 'text-muted-foreground'} hover:text-foreground transition-colors`}
+              onClick={requestNotificationPermission}
+            >
+              <Bell className="h-4 w-4" />
+              <span>{notificationsEnabled ? "Notifications On" : "Enable Notifications"}</span>
+            </button>
+          </div>
+          
           <div className="flex items-center space-x-2">
             <Button
               variant="outline"
@@ -497,6 +603,24 @@ export function MedicineReminder() {
 
       {/* Hidden audio element for notification sound */}
       <audio id="reminder-sound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" />
+
+      {/* Check if user has notifications enabled and prompt them if not */}
+      {(!notificationsEnabled && reminders.length > 0) && (
+        <Card className="bg-blue-50 border-blue-200 mb-4">
+          <CardContent className="flex items-center justify-between p-4">
+            <div className="flex items-center">
+              <Bell className="h-5 w-5 text-blue-500 mr-3" />
+              <div>
+                <p className="font-medium">Enable notifications</p>
+                <p className="text-sm text-muted-foreground">Get notified about your medicine reminders even when you close this app</p>
+              </div>
+            </div>
+            <Button size="sm" onClick={requestNotificationPermission}>
+              Enable
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {loading ? (
         <div className="flex justify-center p-8">
