@@ -9,7 +9,105 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
-      [_ in never]: never
+      notes: {
+        Row: {
+          content: string
+          created_at: string
+          id: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          id?: string
+          title: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          id?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          age: number | null
+          contact_number: string | null
+          created_at: string
+          gender: string | null
+          height: number | null
+          id: string
+          name: string | null
+          physical_issues: string | null
+          updated_at: string
+          weight: number | null
+        }
+        Insert: {
+          age?: number | null
+          contact_number?: string | null
+          created_at?: string
+          gender?: string | null
+          height?: number | null
+          id: string
+          name?: string | null
+          physical_issues?: string | null
+          updated_at?: string
+          weight?: number | null
+        }
+        Update: {
+          age?: number | null
+          contact_number?: string | null
+          created_at?: string
+          gender?: string | null
+          height?: number | null
+          id?: string
+          name?: string | null
+          physical_issues?: string | null
+          updated_at?: string
+          weight?: number | null
+        }
+        Relationships: []
+      }
+      reminders: {
+        Row: {
+          created_at: string
+          dosage: string | null
+          frequency: string
+          id: string
+          medicine_name: string
+          notes: string | null
+          time: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          dosage?: string | null
+          frequency: string
+          id?: string
+          medicine_name: string
+          notes?: string | null
+          time: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          dosage?: string | null
+          frequency?: string
+          id?: string
+          medicine_name?: string
+          notes?: string | null
+          time?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
