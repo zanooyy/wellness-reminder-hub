@@ -19,7 +19,6 @@ self.addEventListener('message', (event) => {
         body: body,
         icon: '/favicon.ico',
         badge: '/favicon.ico',
-        vibrate: [200, 100, 200],
         tag: id,
         renotify: true,
         requireInteraction: true
