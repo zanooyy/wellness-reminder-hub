@@ -3,7 +3,7 @@ import React, { useState } from "react";
 import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatTime, getBorderColor, isReminderDueSoon } from "../utils/reminderUtils";
-import { Pill, Clock, Trash2, Edit, Bell, AlarmClock } from "lucide-react";
+import { Pill, Clock, Trash2, Edit, Bell, AlarmClock, Image } from "lucide-react";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Reminder } from "@/utils/supabase";
 import { SnoozeDialog } from "./SnoozeDialog";
@@ -51,18 +51,29 @@ export function ReminderCard({
       >
         <CardContent className="p-4">
           <div className="flex justify-between items-start mb-3">
-            <div>
-              <h3 className="font-bold text-lg">{reminder.medicine_name}</h3>
-              <div className="flex items-center text-muted-foreground mt-1">
-                <Clock className="h-4 w-4 mr-1" />
-                <span>{formatTime(reminder.time)}</span>
-                
-                {isSnoozed && (
-                  <span className="ml-2 text-xs px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full flex items-center">
-                    <AlarmClock className="h-3 w-3 mr-1" />
-                    Snoozed ({snoozeRemaining}m)
-                  </span>
-                )}
+            <div className="flex gap-3">
+              {reminder.image_url && (
+                <div className="w-12 h-12 rounded-md overflow-hidden border flex-shrink-0">
+                  <img 
+                    src={reminder.image_url} 
+                    alt={reminder.medicine_name}
+                    className="w-full h-full object-cover" 
+                  />
+                </div>
+              )}
+              <div>
+                <h3 className="font-bold text-lg">{reminder.medicine_name}</h3>
+                <div className="flex items-center text-muted-foreground mt-1">
+                  <Clock className="h-4 w-4 mr-1" />
+                  <span>{formatTime(reminder.time)}</span>
+                  
+                  {isSnoozed && (
+                    <span className="ml-2 text-xs px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full flex items-center">
+                      <AlarmClock className="h-3 w-3 mr-1" />
+                      Snoozed ({snoozeRemaining}m)
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
             

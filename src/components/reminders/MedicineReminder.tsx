@@ -44,8 +44,10 @@ export function MedicineReminder() {
   
   const { 
     soundEnabled, selectedSound, activeAlarms, alarmAudioRef,
-    setSoundEnabled, setSelectedSound, playAlarmSound, 
-    playTestSound, stopAllAlarms, toggleSound 
+    volume, customSounds, getAllSounds,
+    setSoundEnabled, setSelectedSound, setVolume,
+    playAlarmSound, playTestSound, stopAllAlarms, toggleSound,
+    addCustomSound, removeCustomSound
   } = useReminderSounds();
   
   // Handle visibility change (page hidden/visible)
@@ -188,6 +190,7 @@ export function MedicineReminder() {
             <button 
               className="flex items-center space-x-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
               onClick={toggleSound}
+              aria-label={soundEnabled ? "Disable sound" : "Enable sound"}
             >
               {soundEnabled ? (
                 <><Volume2 className="h-4 w-4" /><span>Sound On</span></>
@@ -202,9 +205,14 @@ export function MedicineReminder() {
             setOpen={setSoundsDialogOpen}
             selectedSound={selectedSound}
             soundEnabled={soundEnabled}
+            volume={volume}
+            customSounds={customSounds}
             onSelectSound={setSelectedSound}
             onToggleSound={setSoundEnabled}
             onTestSound={playTestSound}
+            onChangeVolume={setVolume}
+            onAddCustomSound={addCustomSound}
+            onRemoveCustomSound={removeCustomSound}
           />
           
           <div className="flex items-center space-x-2 mr-2">

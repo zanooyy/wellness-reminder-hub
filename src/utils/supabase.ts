@@ -19,6 +19,7 @@ export type Profile = {
   contact_number: string | null;
   created_at: string;
   updated_at: string;
+  theme_preference?: string;
 };
 
 export type Reminder = {
@@ -30,6 +31,8 @@ export type Reminder = {
   time: string;
   notes: string | null;
   created_at: string;
+  image_url?: string | null;
+  updated_at?: string | null;
 };
 
 export type Note = {

@@ -2,13 +2,29 @@
 import { useState, useEffect, useRef } from "react";
 import { toast } from "sonner";
 
-// Available notification sounds
+// Available notification sounds with categories
 export const notificationSounds = [
-  { id: "bell", name: "Bell", url: "/sounds/bell.mp3" },
-  { id: "chime", name: "Chime", url: "/sounds/chime.mp3" },
-  { id: "alert", name: "Alert", url: "/sounds/alert.mp3" },
-  { id: "pill-time", name: "Pill Time", url: "/sounds/pill-time.mp3" },
+  // Bells category
+  { id: "bell", name: "Bell", url: "/sounds/bell.mp3", category: "Bells" },
+  { id: "chime", name: "Chime", url: "/sounds/chime.mp3", category: "Bells" },
+  { id: "alert", name: "Alert", url: "/sounds/alert.mp3", category: "Alerts" },
+  { id: "pill-time", name: "Pill Time", url: "/sounds/pill-time.mp3", category: "Alerts" },
+  // Adding more sound options
+  { id: "gentle-chime", name: "Gentle Chime", url: "/sounds/gentle-chime.mp3", category: "Bells" },
+  { id: "soft-bell", name: "Soft Bell", url: "/sounds/soft-bell.mp3", category: "Bells" },
+  { id: "medication-time", name: "Medication Time", url: "/sounds/medication-time.mp3", category: "Alerts" },
+  { id: "soft-alert", name: "Soft Alert", url: "/sounds/soft-alert.mp3", category: "Alerts" },
+  { id: "notification", name: "Notification", url: "/sounds/notification.mp3", category: "Alerts" },
 ];
+
+// Group sounds by category
+export const soundCategories = notificationSounds.reduce((acc, sound) => {
+  if (!acc[sound.category]) {
+    acc[sound.category] = [];
+  }
+  acc[sound.category].push(sound);
+  return acc;
+}, {} as Record<string, typeof notificationSounds>);
 
 export function useReminderSounds() {
   // Create a reference to the audio element
@@ -18,6 +34,8 @@ export function useReminderSounds() {
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [selectedSound, setSelectedSound] = useState("bell");
   const [activeAlarms, setActiveAlarms] = useState<string[]>([]);
+  const [volume, setVolume] = useState(80); // Default volume (0-100)
+  const [customSounds, setCustomSounds] = useState<Array<{id: string, name: string, url: string, category: string}>>([]);
   
   // Effect to load preferences from localStorage
   useEffect(() => {
@@ -30,7 +48,63 @@ export function useReminderSounds() {
     if (savedSoundEnabled) {
       setSoundEnabled(savedSoundEnabled === 'true');
     }
+    
+    const savedVolume = localStorage.getItem('soundVolume');
+    if (savedVolume) {
+      setVolume(parseInt(savedVolume, 10));
+    }
+    
+    const savedCustomSounds = localStorage.getItem('customSounds');
+    if (savedCustomSounds) {
+      try {
+        setCustomSounds(JSON.parse(savedCustomSounds));
+      } catch (e) {
+        console.error("Error parsing custom sounds:", e);
+      }
+    }
   }, []);
+  
+  // Save volume to localStorage when it changes
+  useEffect(() => {
+    localStorage.setItem('soundVolume', volume.toString());
+  }, [volume]);
+  
+  // Save custom sounds to localStorage when they change
+  useEffect(() => {
+    if (customSounds.length > 0) {
+      localStorage.setItem('customSounds', JSON.stringify(customSounds));
+    }
+  }, [customSounds]);
+
+  // Add a custom sound
+  const addCustomSound = (name: string, url: string) => {
+    const id = `custom-${Math.random().toString(36).substring(2, 9)}`;
+    const newSound = {
+      id,
+      name,
+      url,
+      category: "Custom"
+    };
+    
+    setCustomSounds(prev => [...prev, newSound]);
+    return newSound;
+  };
+
+  // Remove a custom sound
+  const removeCustomSound = (id: string) => {
+    setCustomSounds(prev => prev.filter(sound => sound.id !== id));
+    
+    // If the removed sound was selected, switch to default
+    if (selectedSound === id) {
+      setSelectedSound("bell");
+      localStorage.setItem('reminderSound', "bell");
+    }
+  };
+  
+  // Get all available sounds (including custom ones)
+  const getAllSounds = () => {
+    return [...notificationSounds, ...customSounds];
+  };
   
   // Play a sound for a specific reminder
   const playAlarmSound = (reminderId: string) => {
@@ -43,11 +117,13 @@ export function useReminderSounds() {
       }
       
       // Find the selected sound
-      const sound = notificationSounds.find(s => s.id === selectedSound);
+      const allSounds = getAllSounds();
+      const sound = allSounds.find(s => s.id === selectedSound);
       if (!sound) return;
       
       // Create a new audio element for this alarm
       const audio = new Audio(sound.url);
+      audio.volume = volume / 100; // Convert to 0-1 range
       
       // Set a reference to the audio if we don't have one yet
       if (!alarmAudioRef.current) {
@@ -76,7 +152,7 @@ export function useReminderSounds() {
   };
   
   // Play a test sound
-  const playTestSound = () => {
+  const playTestSound = (soundId?: string) => {
     if (!soundEnabled) {
       toast.info("Sound is disabled. Enable sound to test.");
       return;
@@ -84,11 +160,13 @@ export function useReminderSounds() {
     
     try {
       // Find the selected sound
-      const sound = notificationSounds.find(s => s.id === selectedSound);
+      const allSounds = getAllSounds();
+      const sound = allSounds.find(s => s.id === (soundId || selectedSound));
       if (!sound) return;
       
       // Create a new audio element for the test
       const audio = new Audio(sound.url);
+      audio.volume = volume / 100; // Convert to 0-1 range
       
       // Play the sound
       audio.play().catch(err => {
@@ -130,11 +208,17 @@ export function useReminderSounds() {
     selectedSound,
     activeAlarms,
     alarmAudioRef,
+    volume,
+    customSounds,
+    getAllSounds,
     setSoundEnabled,
     setSelectedSound,
+    setVolume,
     playAlarmSound,
     playTestSound,
     stopAllAlarms,
-    toggleSound
+    toggleSound,
+    addCustomSound,
+    removeCustomSound
   };
 }

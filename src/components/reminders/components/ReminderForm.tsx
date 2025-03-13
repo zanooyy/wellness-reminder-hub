@@ -1,19 +1,20 @@
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Reminder } from "@/utils/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/utils/supabase";
 import { toast } from "sonner";
 import { 
   Dialog, DialogContent, DialogDescription, DialogFooter, 
-  DialogHeader, DialogTitle, DialogTrigger 
+  DialogHeader, DialogTitle 
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlarmPlus } from "lucide-react";
+import { AlarmPlus, ImagePlus, X } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
 
 interface ReminderFormProps {
   open: boolean;
@@ -30,10 +31,14 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
     frequency: currentReminder?.frequency || "daily",
     time: currentReminder?.time || "",
     notes: currentReminder?.notes || "",
+    image_url: currentReminder?.image_url || "",
   });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
 
   // Reset form when dialog opens/closes or current reminder changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (currentReminder) {
       setFormData({
         medicine_name: currentReminder.medicine_name,
@@ -41,7 +46,9 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
         frequency: currentReminder.frequency,
         time: currentReminder.time,
         notes: currentReminder.notes || "",
+        image_url: currentReminder.image_url || "",
       });
+      setImagePreview(currentReminder.image_url || null);
     } else {
       setFormData({
         medicine_name: "",
@@ -49,8 +56,11 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
         frequency: "daily",
         time: "",
         notes: "",
+        image_url: "",
       });
+      setImagePreview(null);
     }
+    setImageFile(null);
   }, [currentReminder, open]);
 
   // Handle form input changes
@@ -66,6 +76,58 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
     setFormData((prev) => ({ ...prev, frequency: value }));
   };
 
+  // Handle image upload
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      // Check file size (max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Image size should be less than 5MB");
+        return;
+      }
+      
+      setImageFile(file);
+      const previewUrl = URL.createObjectURL(file);
+      setImagePreview(previewUrl);
+    }
+  };
+
+  // Remove image
+  const removeImage = () => {
+    setImageFile(null);
+    setImagePreview(null);
+    setFormData(prev => ({ ...prev, image_url: "" }));
+  };
+
+  // Upload image to storage
+  const uploadImage = async (file: File): Promise<string> => {
+    setIsUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
+      const filePath = `${user!.id}/${fileName}`;
+      
+      // Create medicine-images bucket if it doesn't exist (handled by RLS)
+      const { error: uploadError } = await supabase.storage
+        .from('medicine-images')
+        .upload(filePath, file);
+        
+      if (uploadError) throw uploadError;
+      
+      // Get public URL
+      const { data } = supabase.storage
+        .from('medicine-images')
+        .getPublicUrl(filePath);
+        
+      return data.publicUrl;
+    } catch (error: any) {
+      console.error("Error uploading image:", error);
+      throw new Error(error.message || "Error uploading image");
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   // Handle form submission
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -78,12 +140,25 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
     }
     
     try {
+      let imageUrl = formData.image_url;
+      
+      // Upload image if provided
+      if (imageFile) {
+        try {
+          imageUrl = await uploadImage(imageFile);
+        } catch (error: any) {
+          toast.error(error.message || "Failed to upload image");
+          return;
+        }
+      }
+      
       if (currentReminder) {
         // Update existing reminder
         const { error } = await supabase
           .from("reminders")
           .update({
             ...formData,
+            image_url: imageUrl,
             updated_at: new Date().toISOString(),
           })
           .eq("id", currentReminder.id);
@@ -98,6 +173,7 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
           .insert({
             user_id: user.id,
             ...formData,
+            image_url: imageUrl,
             created_at: new Date().toISOString(),
           });
 
@@ -190,6 +266,40 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
           </div>
           
           <div className="form-input-wrapper">
+            <Label className="form-label">Medicine Image</Label>
+            <div className="mt-1 flex items-center">
+              {imagePreview ? (
+                <div className="relative w-24 h-24 rounded-md overflow-hidden border">
+                  <img
+                    src={imagePreview}
+                    alt="Medicine preview"
+                    className="w-full h-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={removeImage}
+                    className="absolute top-1 right-1 bg-red-500 text-white rounded-full p-1"
+                    aria-label="Remove image"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <label className="flex flex-col items-center justify-center w-24 h-24 border-2 border-dashed rounded-md border-gray-300 cursor-pointer hover:border-primary transition-colors">
+                  <ImagePlus className="h-6 w-6 text-muted-foreground" />
+                  <span className="mt-1 text-xs text-muted-foreground">Add Image</span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                  />
+                </label>
+              )}
+            </div>
+          </div>
+          
+          <div className="form-input-wrapper">
             <Label htmlFor="notes" className="form-label">
               Notes
             </Label>
@@ -207,8 +317,8 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit">
-              {currentReminder ? "Update Reminder" : "Add Reminder"}
+            <Button type="submit" disabled={isUploading}>
+              {isUploading ? "Uploading..." : currentReminder ? "Update Reminder" : "Add Reminder"}
             </Button>
           </DialogFooter>
         </form>
