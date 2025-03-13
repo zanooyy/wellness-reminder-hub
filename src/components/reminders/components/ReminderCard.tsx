@@ -1,114 +1,157 @@
 
-import React from "react";
-import { Reminder } from "@/utils/supabase";
-import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card";
+import React, { useState } from "react";
+import { Card, CardContent, CardFooter } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Edit, Trash, Clock, Pill, MoveHorizontal, AlertCircle, Calendar, Bell } from "lucide-react";
 import { formatTime, getBorderColor, isReminderDueSoon } from "../utils/reminderUtils";
+import { Pill, Clock, Trash2, Edit, Bell, AlarmClock } from "lucide-react";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Reminder } from "@/utils/supabase";
+import { SnoozeDialog } from "./SnoozeDialog";
+import { toast } from "sonner";
+import { useNotifications } from "../hooks/useNotifications";
 
 interface ReminderCardProps {
   reminder: Reminder;
   isActive: boolean;
   onEdit: (reminder: Reminder) => void;
   onDelete: (id: string) => void;
+  onSnooze?: (id: string, minutes: number) => void;
 }
 
-export function ReminderCard({ reminder, isActive, onEdit, onDelete }: ReminderCardProps) {
-  return (
-    <Card 
-      key={reminder.id} 
-      className={`overflow-hidden hover:shadow-md transition-shadow border-l-4 ${
-        isActive ? "animate-pulse" : ""
-      }`} 
-      style={{ borderLeftColor: getBorderColor(reminder.frequency) }}
-    >
-      <CardHeader className="pb-2">
-        <CardTitle className="flex items-start justify-between">
-          <div className="flex items-center">
-            <Pill className="h-5 w-5 mr-2 text-primary" />
-            <span className="truncate">{reminder.medicine_name}</span>
-          </div>
-          
-          <div className="flex space-x-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8"
-              onClick={() => onEdit(reminder)}
-            >
-              <Edit className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-destructive"
-              onClick={() => onDelete(reminder.id)}
-            >
-              <Trash className="h-4 w-4" />
-            </Button>
-          </div>
-        </CardTitle>
-        
-        {reminder.dosage && (
-          <CardDescription className="mt-1 flex items-center">
-            <MoveHorizontal className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
-            {reminder.dosage}
-          </CardDescription>
-        )}
-      </CardHeader>
-      
-      <CardContent className="pb-2">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center text-sm font-medium">
-            <Clock className="h-4 w-4 mr-1.5 text-muted-foreground" />
-            {formatTime(reminder.time)}
-          </div>
-          
-          <div>{renderFrequencyBadge(reminder.frequency)}</div>
-        </div>
-        
-        {reminder.notes && (
-          <div className="mt-3 pt-3 border-t text-sm">
-            <div className="flex items-start">
-              <AlertCircle className="h-4 w-4 mr-1.5 text-muted-foreground mt-0.5 flex-shrink-0" />
-              <span className="text-muted-foreground">{reminder.notes}</span>
-            </div>
-          </div>
-        )}
-      </CardContent>
-      
-      <CardFooter className="pt-1 text-xs text-muted-foreground flex justify-between">
-        <span className="flex items-center">
-          <Calendar className="h-3.5 w-3.5 mr-1" />
-          Created {new Date(reminder.created_at).toLocaleDateString()}
-        </span>
-        <span className="flex items-center">
-          <Bell className="h-3.5 w-3.5 mr-1" />
-          {isReminderDueSoon(reminder.time) ? (
-            <span className="text-orange-500 font-medium">Due soon</span>
-          ) : (
-            <span>Scheduled</span>
-          )}
-        </span>
-      </CardFooter>
-    </Card>
-  );
-}
-
-// Render frequency badge
-function renderFrequencyBadge(frequency: string) {
-  const getColor = () => {
-    switch (frequency) {
-      case 'daily': return 'bg-blue-100 text-blue-700';
-      case 'weekly': return 'bg-purple-100 text-purple-700';
-      case 'monthly': return 'bg-amber-100 text-amber-700';
-      default: return 'bg-gray-100 text-gray-700';
+export function ReminderCard({ 
+  reminder, 
+  isActive, 
+  onEdit, 
+  onDelete,
+  onSnooze 
+}: ReminderCardProps) {
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [snoozeDialogOpen, setSnoozeDialogOpen] = useState(false);
+  const { snoozeReminder, isReminderSnoozed, getSnoozeRemaining } = useNotifications();
+  
+  const borderColor = getBorderColor(reminder.frequency);
+  const dueSoon = isReminderDueSoon(reminder.time);
+  
+  // Check if reminder is snoozed
+  const isSnoozed = isReminderSnoozed(reminder.id);
+  const snoozeRemaining = getSnoozeRemaining(reminder.id);
+  
+  const handleSnooze = (minutes: number) => {
+    snoozeReminder(reminder.id, minutes);
+    if (onSnooze) {
+      onSnooze(reminder.id, minutes);
     }
   };
   
   return (
-    <span className={`text-xs px-2 py-1 rounded-full font-medium ${getColor()}`}>
-      {frequency.charAt(0).toUpperCase() + frequency.slice(1)}
-    </span>
+    <>
+      <Card 
+        className={`overflow-hidden transition-all ${isActive ? 'shadow-lg animate-pulse border-red-500' : ''} ${dueSoon && !isSnoozed ? 'border-amber-500 border-2' : ''}`}
+        style={{ borderLeftColor: borderColor, borderLeftWidth: '4px' }}
+      >
+        <CardContent className="p-4">
+          <div className="flex justify-between items-start mb-3">
+            <div>
+              <h3 className="font-bold text-lg">{reminder.medicine_name}</h3>
+              <div className="flex items-center text-muted-foreground mt-1">
+                <Clock className="h-4 w-4 mr-1" />
+                <span>{formatTime(reminder.time)}</span>
+                
+                {isSnoozed && (
+                  <span className="ml-2 text-xs px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full flex items-center">
+                    <AlarmClock className="h-3 w-3 mr-1" />
+                    Snoozed ({snoozeRemaining}m)
+                  </span>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex">
+              {dueSoon && !isSnoozed && (
+                <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full flex items-center">
+                  <Bell className="h-3 w-3 mr-1" />
+                  Due soon
+                </span>
+              )}
+            </div>
+          </div>
+          
+          {reminder.dosage && (
+            <div className="flex items-center mb-2 text-sm">
+              <Pill className="h-4 w-4 mr-1 text-primary" />
+              <span>{reminder.dosage}</span>
+            </div>
+          )}
+          
+          {reminder.notes && (
+            <p className="text-sm text-muted-foreground mt-2 line-clamp-2">
+              {reminder.notes}
+            </p>
+          )}
+        </CardContent>
+        
+        <CardFooter className="flex justify-between bg-muted/50 px-4 py-2">
+          <div className="flex gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onEdit(reminder)}
+              className="h-8 px-2 text-xs"
+            >
+              <Edit className="h-3.5 w-3.5 mr-1" />
+              Edit
+            </Button>
+            
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDeleteDialogOpen(true)}
+              className="h-8 px-2 text-xs text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              Delete
+            </Button>
+          </div>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 px-2 text-xs"
+            onClick={() => setSnoozeDialogOpen(true)}
+          >
+            <AlarmClock className="h-3.5 w-3.5 mr-1" />
+            {isSnoozed ? `Snoozed (${snoozeRemaining}m)` : 'Snooze'}
+          </Button>
+        </CardFooter>
+      </Card>
+      
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Reminder</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete the reminder for {reminder.medicine_name}?
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={() => onDelete(reminder.id)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      
+      <SnoozeDialog
+        open={snoozeDialogOpen}
+        setOpen={setSnoozeDialogOpen}
+        reminderName={reminder.medicine_name}
+        onSnooze={handleSnooze}
+      />
+    </>
   );
 }

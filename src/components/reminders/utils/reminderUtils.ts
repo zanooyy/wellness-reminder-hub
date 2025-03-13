@@ -47,7 +47,8 @@ export const checkDueReminders = (
   reminders: Reminder[], 
   playAlarmSound: (id: string) => void, 
   stopAllAlarms: () => void, 
-  sendNotification: (reminder: Reminder) => void
+  sendNotification: (reminder: Reminder) => void,
+  isReminderSnoozed?: (id: string) => boolean
 ) => {
   if (reminders.length === 0) return [];
   
@@ -56,6 +57,11 @@ export const checkDueReminders = (
   const currentMinute = currentTime.getMinutes().toString().padStart(2, '0');
   
   const dueReminders = reminders.filter(reminder => {
+    // Skip snoozed reminders
+    if (isReminderSnoozed && isReminderSnoozed(reminder.id)) {
+      return false;
+    }
+    
     // Check if the time is within 1 minute of the current time
     const [reminderHour, reminderMinute] = reminder.time.split(':');
     const reminderDate = new Date();

@@ -38,7 +38,8 @@ export function MedicineReminder() {
   const { 
     notificationsEnabled, notificationPermission, 
     requestNotificationPermission, sendNotification,
-    scheduleUpcomingNotifications, getUpcomingReminders 
+    scheduleUpcomingNotifications, getUpcomingReminders,
+    snoozeReminder, isReminderSnoozed 
   } = useNotifications();
   
   const { 
@@ -98,7 +99,8 @@ export function MedicineReminder() {
         reminders, 
         playAlarmSound, 
         stopAllAlarms, 
-        sendNotification
+        sendNotification,
+        isReminderSnoozed
       );
       
       if (dueReminders.length > 0) {
@@ -117,10 +119,11 @@ export function MedicineReminder() {
               duration: 10000,
               icon: <BellRing className="h-5 w-5 text-blue-500" />,
               action: {
-                label: "Dismiss",
+                label: "Snooze",
                 onClick: () => {
+                  snoozeReminder(reminder.id, 5);
                   stopAllAlarms();
-                  console.log("Dismissed reminder");
+                  toast.success(`Reminder for ${reminder.medicine_name} snoozed for 5 minutes`);
                 },
               }
             }
@@ -137,7 +140,8 @@ export function MedicineReminder() {
       reminders, 
       playAlarmSound, 
       stopAllAlarms, 
-      sendNotification
+      sendNotification,
+      isReminderSnoozed
     );
     
     if (initialDueReminders.length > 0) {
@@ -159,6 +163,14 @@ export function MedicineReminder() {
   // Reset form data
   const resetForm = () => {
     setCurrentReminder(null);
+  };
+
+  // Handle snoozing a reminder
+  const handleSnooze = (id: string, minutes: number) => {
+    // Stop any active alarms for this reminder
+    if (activeAlarms.includes(id)) {
+      stopAllAlarms();
+    }
   };
 
   return (
@@ -283,6 +295,7 @@ export function MedicineReminder() {
               isActive={activeAlarms.includes(reminder.id)}
               onEdit={openEditDialog}
               onDelete={deleteReminder}
+              onSnooze={handleSnooze}
             />
           ))}
         </div>

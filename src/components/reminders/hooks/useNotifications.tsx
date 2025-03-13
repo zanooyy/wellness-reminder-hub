@@ -6,6 +6,7 @@ import { Reminder } from "@/utils/supabase";
 export function useNotifications() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "default">("default");
+  const [snoozedReminders, setSnoozedReminders] = useState<Record<string, Date>>({});
 
   // Check notification permission and update state
   const checkNotificationPermission = () => {
@@ -98,6 +99,12 @@ export function useNotifications() {
       // If the reminder time has already passed today, don't include it
       if (reminderTime < now) return false;
       
+      // If the reminder is snoozed and snooze time is in the future, don't include it
+      if (snoozedReminders[reminder.id]) {
+        const snoozeTime = snoozedReminders[reminder.id];
+        if (snoozeTime > now) return false;
+      }
+      
       return reminderTime <= cutoffTime;
     });
   };
@@ -106,13 +113,17 @@ export function useNotifications() {
   const sendNotification = (reminder: Reminder) => {
     if (!notificationsEnabled || Notification.permission !== "granted") return;
     
+    // Don't send notification if reminder is snoozed
+    if (snoozedReminders[reminder.id] && snoozedReminders[reminder.id] > new Date()) {
+      return;
+    }
+    
     // Create and show notification
     try {
       const notification = new Notification(`Time to take ${reminder.medicine_name}`, {
         body: reminder.dosage ? `Dosage: ${reminder.dosage}` : "",
         icon: "/favicon.ico",
         tag: reminder.id, // Prevent duplicate notifications
-        renotify: true, // Allow notifications with same tag to notify
         requireInteraction: true // Keep notification until user interacts
       });
       
@@ -140,11 +151,74 @@ export function useNotifications() {
     }
   };
 
+  // Snooze a reminder for the specified minutes
+  const snoozeReminder = (reminderId: string, minutes: number) => {
+    const snoozeUntil = new Date(new Date().getTime() + minutes * 60000);
+    setSnoozedReminders(prev => ({
+      ...prev,
+      [reminderId]: snoozeUntil
+    }));
+    
+    toast.info(`Reminder snoozed for ${minutes} minutes`);
+    
+    // Also tell service worker about the snooze
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'SNOOZE_NOTIFICATION',
+        payload: {
+          id: reminderId,
+          snoozeUntil: snoozeUntil.getTime()
+        }
+      });
+    }
+    
+    return snoozeUntil;
+  };
+
+  // Check if a reminder is currently snoozed
+  const isReminderSnoozed = (reminderId: string): boolean => {
+    return !!(snoozedReminders[reminderId] && snoozedReminders[reminderId] > new Date());
+  };
+
+  // Get snooze time remaining in minutes
+  const getSnoozeRemaining = (reminderId: string): number => {
+    if (!snoozedReminders[reminderId] || snoozedReminders[reminderId] <= new Date()) {
+      return 0;
+    }
+    
+    const now = new Date();
+    const snoozeTime = snoozedReminders[reminderId];
+    return Math.ceil((snoozeTime.getTime() - now.getTime()) / 60000);
+  };
+
   // Initialize on component mount
   useEffect(() => {
     checkNotificationPermission();
     initializeServiceWorker();
+    
+    // Load saved snoozed reminders from localStorage
+    const savedSnoozed = localStorage.getItem('snoozedReminders');
+    if (savedSnoozed) {
+      try {
+        const parsed = JSON.parse(savedSnoozed);
+        // Convert string dates back to Date objects
+        const convertedSnoozed: Record<string, Date> = {};
+        Object.entries(parsed).forEach(([id, time]) => {
+          convertedSnoozed[id] = new Date(time as string);
+        });
+        setSnoozedReminders(convertedSnoozed);
+      } catch (e) {
+        console.error("Error parsing saved snoozed reminders:", e);
+      }
+    }
   }, []);
+
+  // Save snoozed reminders to localStorage when they change
+  useEffect(() => {
+    if (Object.keys(snoozedReminders).length > 0) {
+      localStorage.setItem('snoozedReminders', JSON.stringify(snoozedReminders));
+    }
+  }, [snoozedReminders]);
 
   return {
     notificationsEnabled,
@@ -152,6 +226,9 @@ export function useNotifications() {
     requestNotificationPermission,
     scheduleUpcomingNotifications,
     getUpcomingReminders,
-    sendNotification
+    sendNotification,
+    snoozeReminder,
+    isReminderSnoozed,
+    getSnoozeRemaining
   };
 }

@@ -1,21 +1,25 @@
 
 import { useState, useEffect, useRef } from "react";
+import { toast } from "sonner";
 
 // Available notification sounds
 export const notificationSounds = [
-  { id: "sound1", name: "Bell", url: "https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" },
-  { id: "sound2", name: "Chime", url: "https://assets.mixkit.co/active_storage/sfx/1531/1531-preview.mp3" },
-  { id: "sound3", name: "Alert", url: "https://assets.mixkit.co/active_storage/sfx/1824/1824-preview.mp3" },
-  { id: "sound4", name: "Soft", url: "https://assets.mixkit.co/active_storage/sfx/1821/1821-preview.mp3" },
+  { id: "bell", name: "Bell", url: "/sounds/bell.mp3" },
+  { id: "chime", name: "Chime", url: "/sounds/chime.mp3" },
+  { id: "alert", name: "Alert", url: "/sounds/alert.mp3" },
+  { id: "pill-time", name: "Pill Time", url: "/sounds/pill-time.mp3" },
 ];
 
 export function useReminderSounds() {
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const [selectedSound, setSelectedSound] = useState<string>("sound1");
-  const [activeAlarms, setActiveAlarms] = useState<string[]>([]);
+  // Create a reference to the audio element
   const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
-
-  // Load sound preferences from localStorage
+  
+  // State for sound preferences
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [selectedSound, setSelectedSound] = useState("bell");
+  const [activeAlarms, setActiveAlarms] = useState<string[]>([]);
+  
+  // Effect to load preferences from localStorage
   useEffect(() => {
     const savedSound = localStorage.getItem('reminderSound');
     if (savedSound) {
@@ -23,102 +27,104 @@ export function useReminderSounds() {
     }
     
     const savedSoundEnabled = localStorage.getItem('soundEnabled');
-    if (savedSoundEnabled !== null) {
+    if (savedSoundEnabled) {
       setSoundEnabled(savedSoundEnabled === 'true');
     }
   }, []);
-
-  // Initialize audio element
-  useEffect(() => {
-    // Get the selected sound URL
-    const soundUrl = notificationSounds.find(sound => sound.id === selectedSound)?.url || notificationSounds[0].url;
+  
+  // Play a sound for a specific reminder
+  const playAlarmSound = (reminderId: string) => {
+    if (!soundEnabled) return;
     
-    // Create audio element for alarm
-    alarmAudioRef.current = new Audio(soundUrl);
-    alarmAudioRef.current.loop = false;
+    try {
+      // Check if we already have an active alarm for this reminder
+      if (activeAlarms.includes(reminderId)) {
+        return; // Sound is already playing for this reminder
+      }
+      
+      // Find the selected sound
+      const sound = notificationSounds.find(s => s.id === selectedSound);
+      if (!sound) return;
+      
+      // Create a new audio element for this alarm
+      const audio = new Audio(sound.url);
+      
+      // Set a reference to the audio if we don't have one yet
+      if (!alarmAudioRef.current) {
+        alarmAudioRef.current = audio;
+      }
+      
+      // Set up event handlers
+      audio.addEventListener('ended', () => {
+        // Loop the sound
+        if (activeAlarms.includes(reminderId)) {
+          audio.play().catch(err => console.error("Error playing sound:", err));
+        }
+      });
+      
+      // Play the sound
+      audio.play().then(() => {
+        // Add this reminder to the active alarms list
+        setActiveAlarms(prev => [...prev, reminderId]);
+      }).catch(err => {
+        console.error("Error playing sound:", err);
+      });
+    } catch (error) {
+      console.error("Error playing alarm sound:", error);
+      toast.error("Could not play notification sound");
+    }
+  };
+  
+  // Play a test sound
+  const playTestSound = () => {
+    if (!soundEnabled) {
+      toast.info("Sound is disabled. Enable sound to test.");
+      return;
+    }
     
-    // Clean up on component unmount
-    return () => {
+    try {
+      // Find the selected sound
+      const sound = notificationSounds.find(s => s.id === selectedSound);
+      if (!sound) return;
+      
+      // Create a new audio element for the test
+      const audio = new Audio(sound.url);
+      
+      // Play the sound
+      audio.play().catch(err => {
+        console.error("Error playing test sound:", err);
+        toast.error("Could not play test sound");
+      });
+    } catch (error) {
+      console.error("Error playing test sound:", error);
+    }
+  };
+  
+  // Stop all alarms
+  const stopAllAlarms = () => {
+    try {
       if (alarmAudioRef.current) {
         alarmAudioRef.current.pause();
-        alarmAudioRef.current = null;
-      }
-    };
-  }, [selectedSound]);
-
-  // Save sound preferences when they change
-  useEffect(() => {
-    localStorage.setItem('reminderSound', selectedSound);
-    localStorage.setItem('soundEnabled', soundEnabled.toString());
-  }, [selectedSound, soundEnabled]);
-
-  // Play alarm sound for a specific reminder
-  const playAlarmSound = (reminderId: string) => {
-    if (!soundEnabled || !alarmAudioRef.current) return;
-    
-    // Only play if not already playing for this reminder
-    if (!activeAlarms.includes(reminderId)) {
-      setActiveAlarms(prev => [...prev, reminderId]);
-      
-      // Update audio source with selected sound
-      const soundUrl = notificationSounds.find(sound => sound.id === selectedSound)?.url || notificationSounds[0].url;
-      if (alarmAudioRef.current && alarmAudioRef.current.src !== soundUrl) {
-        alarmAudioRef.current.src = soundUrl;
-      }
-      
-      // Play the alarm sound
-      if (alarmAudioRef.current) {
         alarmAudioRef.current.currentTime = 0;
-        alarmAudioRef.current.play()
-          .catch(err => console.error("Error playing alarm sound:", err));
       }
-      
-      // Remove from active alarms after sound completes
-      setTimeout(() => {
-        setActiveAlarms(prev => prev.filter(id => id !== reminderId));
-      }, 5000); // Assuming the alarm sound is around 5 seconds
+      setActiveAlarms([]);
+    } catch (error) {
+      console.error("Error stopping alarm sounds:", error);
     }
   };
-
-  // Test selected sound
-  const playTestSound = () => {
-    if (!alarmAudioRef.current) return;
-    
-    // Update audio source with selected sound
-    const soundUrl = notificationSounds.find(sound => sound.id === selectedSound)?.url || notificationSounds[0].url;
-    if (alarmAudioRef.current && alarmAudioRef.current.src !== soundUrl) {
-      alarmAudioRef.current.src = soundUrl;
-    }
-    
-    // Play the test sound
-    alarmAudioRef.current.currentTime = 0;
-    alarmAudioRef.current.play()
-      .catch(err => console.error("Error playing test sound:", err));
-  };
-
-  // Stop all alarm sounds
-  const stopAllAlarms = () => {
-    if (alarmAudioRef.current) {
-      alarmAudioRef.current.pause();
-      alarmAudioRef.current.currentTime = 0;
-    }
-    setActiveAlarms([]);
-  };
-
-  // Toggle sound
+  
+  // Toggle sound on/off
   const toggleSound = () => {
-    setSoundEnabled(!soundEnabled);
+    const newValue = !soundEnabled;
+    setSoundEnabled(newValue);
+    localStorage.setItem('soundEnabled', newValue.toString());
     
-    if (!soundEnabled) {
-      localStorage.setItem('soundEnabled', 'true');
-      toast.success("Alarm sounds enabled");
-    } else {
+    if (!newValue) {
+      // Stop all active sounds if we're disabling sound
       stopAllAlarms();
-      localStorage.setItem('soundEnabled', 'false');
-      toast.success("Alarm sounds disabled");
     }
   };
-
+  
   return {
     soundEnabled,
     selectedSound,
