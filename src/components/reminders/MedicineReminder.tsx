@@ -11,11 +11,12 @@ import { supabase, Reminder } from "@/utils/supabase";
 import { toast } from "sonner";
 import { 
   AlarmClockCheck, AlarmPlus, Clock, Pill, Trash, Edit, AlertCircle, Calendar, MoveHorizontal,
-  Bell, BellRing, Filter, ArrowUpDown, VolumeX, Volume2
+  Bell, BellRing, Filter, ArrowUpDown, VolumeX, Volume2, Settings
 } from "lucide-react";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { format } from "date-fns";
 import { Switch } from "@/components/ui/switch";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 
 export function MedicineReminder() {
   const { user } = useAuth();
@@ -27,6 +28,9 @@ export function MedicineReminder() {
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "default">("default");
+  const [selectedSound, setSelectedSound] = useState<string>("sound1");
+  const [soundsDialogOpen, setSoundsDialogOpen] = useState(false);
   const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
   const [activeAlarms, setActiveAlarms] = useState<string[]>([]);
   const [formData, setFormData] = useState({
@@ -37,17 +41,97 @@ export function MedicineReminder() {
     notes: "",
   });
 
+  // Available notification sounds
+  const notificationSounds = [
+    { id: "sound1", name: "Bell", url: "https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" },
+    { id: "sound2", name: "Chime", url: "https://assets.mixkit.co/active_storage/sfx/1531/1531-preview.mp3" },
+    { id: "sound3", name: "Alert", url: "https://assets.mixkit.co/active_storage/sfx/1824/1824-preview.mp3" },
+    { id: "sound4", name: "Soft", url: "https://assets.mixkit.co/active_storage/sfx/1821/1821-preview.mp3" },
+  ];
+
   // Initialize notifications
   useEffect(() => {
     checkNotificationPermission();
+    
+    // Register service worker for background notifications
+    if ('serviceWorker' in navigator) {
+      try {
+        navigator.serviceWorker.register('/sw.js').then(function(registration) {
+          console.log('ServiceWorker registration successful with scope: ', registration.scope);
+        }).catch(function(err) {
+          console.log('ServiceWorker registration failed: ', err);
+        });
+      } catch (error) {
+        console.error("Service worker registration failed:", error);
+      }
+    }
 
     // Add event listener for when the page is about to be closed
     window.addEventListener('beforeunload', handleBeforeUnload);
     
+    // Listen for visibility changes to handle when app is in background
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
     // Clean up on component unmount
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
+  }, []);
+
+  // Handle visibility change (page hidden/visible)
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'hidden' && notificationsEnabled) {
+      // App is going to background, schedule upcoming notifications
+      scheduleUpcomingNotifications();
+    }
+  };
+
+  // Schedule upcoming notifications when app goes to background
+  const scheduleUpcomingNotifications = () => {
+    if (!notificationsEnabled || Notification.permission !== 'granted') return;
+    
+    const upcomingReminders = getUpcomingReminders(60); // Next 60 minutes
+    
+    if (upcomingReminders.length > 0) {
+      // Schedule notifications for upcoming reminders
+      upcomingReminders.forEach(reminder => {
+        const [hours, minutes] = reminder.time.split(':').map(Number);
+        const reminderTime = new Date();
+        reminderTime.setHours(hours, minutes, 0, 0);
+        
+        const now = new Date();
+        const delayMs = reminderTime.getTime() - now.getTime();
+        
+        if (delayMs > 0) {
+          // Use service worker to schedule notification
+          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.controller.postMessage({
+              type: 'SCHEDULE_NOTIFICATION',
+              payload: {
+                id: reminder.id,
+                title: `Medicine Reminder: ${reminder.medicine_name}`,
+                body: reminder.dosage ? `Dosage: ${reminder.dosage}` : "Time to take your medicine",
+                time: delayMs
+              }
+            });
+          }
+        }
+      });
+    }
+  };
+
+  // Load selected sound from localStorage on component mount
+  useEffect(() => {
+    const savedSound = localStorage.getItem('reminderSound');
+    if (savedSound) {
+      setSelectedSound(savedSound);
+    }
+    
+    const savedSoundEnabled = localStorage.getItem('soundEnabled');
+    if (savedSoundEnabled !== null) {
+      setSoundEnabled(savedSoundEnabled === 'true');
+    }
   }, []);
 
   // Check notification permission and update state
@@ -57,6 +141,7 @@ export function MedicineReminder() {
       return;
     }
 
+    setNotificationPermission(Notification.permission);
     if (Notification.permission === "granted") {
       setNotificationsEnabled(true);
     }
@@ -71,6 +156,8 @@ export function MedicineReminder() {
 
     try {
       const permission = await Notification.requestPermission();
+      setNotificationPermission(permission);
+      
       if (permission === "granted") {
         setNotificationsEnabled(true);
         toast.success("Notifications enabled");
@@ -101,6 +188,9 @@ export function MedicineReminder() {
         body: `Don't forget: ${nextReminder.medicine_name} at ${formatTime(nextReminder.time)}${upcomingReminders.length > 1 ? ` and ${upcomingReminders.length - 1} more reminders` : ''}`,
         icon: "/favicon.ico"
       });
+      
+      // Schedule background notifications
+      scheduleUpcomingNotifications();
     }
   };
 
@@ -125,8 +215,11 @@ export function MedicineReminder() {
 
   // Initialize alarm sound
   useEffect(() => {
+    // Get the selected sound URL
+    const soundUrl = notificationSounds.find(sound => sound.id === selectedSound)?.url || notificationSounds[0].url;
+    
     // Create audio element for alarm
-    alarmAudioRef.current = new Audio("https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3");
+    alarmAudioRef.current = new Audio(soundUrl);
     alarmAudioRef.current.loop = false;
     
     // Clean up on component unmount
@@ -136,7 +229,7 @@ export function MedicineReminder() {
         alarmAudioRef.current = null;
       }
     };
-  }, []);
+  }, [selectedSound]);
 
   // Fetch reminders on component mount
   useEffect(() => {
@@ -157,7 +250,13 @@ export function MedicineReminder() {
     checkDueReminders();
     
     return () => clearInterval(checkInterval);
-  }, [reminders, soundEnabled, notificationsEnabled]);
+  }, [reminders, soundEnabled, notificationsEnabled, selectedSound]);
+  
+  // Save sound preferences when they change
+  useEffect(() => {
+    localStorage.setItem('reminderSound', selectedSound);
+    localStorage.setItem('soundEnabled', soundEnabled.toString());
+  }, [selectedSound, soundEnabled]);
   
   // Play alarm sound for a specific reminder
   const playAlarmSound = (reminderId: string) => {
@@ -166,6 +265,12 @@ export function MedicineReminder() {
     // Only play if not already playing for this reminder
     if (!activeAlarms.includes(reminderId)) {
       setActiveAlarms(prev => [...prev, reminderId]);
+      
+      // Update audio source with selected sound
+      const soundUrl = notificationSounds.find(sound => sound.id === selectedSound)?.url || notificationSounds[0].url;
+      if (alarmAudioRef.current && alarmAudioRef.current.src !== soundUrl) {
+        alarmAudioRef.current.src = soundUrl;
+      }
       
       // Play the alarm sound
       if (alarmAudioRef.current) {
@@ -179,6 +284,22 @@ export function MedicineReminder() {
         setActiveAlarms(prev => prev.filter(id => id !== reminderId));
       }, 5000); // Assuming the alarm sound is around 5 seconds
     }
+  };
+  
+  // Test selected sound
+  const playTestSound = () => {
+    if (!alarmAudioRef.current) return;
+    
+    // Update audio source with selected sound
+    const soundUrl = notificationSounds.find(sound => sound.id === selectedSound)?.url || notificationSounds[0].url;
+    if (alarmAudioRef.current && alarmAudioRef.current.src !== soundUrl) {
+      alarmAudioRef.current.src = soundUrl;
+    }
+    
+    // Play the test sound
+    alarmAudioRef.current.currentTime = 0;
+    alarmAudioRef.current.play()
+      .catch(err => console.error("Error playing test sound:", err));
   };
   
   // Stop all alarm sounds
@@ -237,11 +358,25 @@ export function MedicineReminder() {
         );
         
         // Send browser notification if enabled
-        if (notificationsEnabled) {
-          new Notification(`Time to take ${reminder.medicine_name}`, {
-            body: reminder.dosage ? `Dosage: ${reminder.dosage}` : "",
-            icon: "/favicon.ico"
-          });
+        if (notificationsEnabled && Notification.permission === "granted") {
+          // Create and show notification
+          try {
+            const notification = new Notification(`Time to take ${reminder.medicine_name}`, {
+              body: reminder.dosage ? `Dosage: ${reminder.dosage}` : "",
+              icon: "/favicon.ico",
+              vibrate: [200, 100, 200],
+              tag: reminder.id, // Prevent duplicate notifications
+              renotify: true, // Allow notifications with same tag to notify
+              requireInteraction: true // Keep notification until user interacts
+            });
+            
+            notification.onclick = function() {
+              window.focus();
+              notification.close();
+            };
+          } catch (error) {
+            console.error("Error sending notification:", error);
+          }
         }
       });
     }
@@ -454,13 +589,96 @@ export function MedicineReminder() {
             </button>
           </div>
           
+          <Dialog open={soundsDialogOpen} onOpenChange={setSoundsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="flex items-center gap-1"
+              >
+                <Settings className="h-4 w-4" />
+                <span>Sound Settings</span>
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Notification Sound Settings</DialogTitle>
+                <DialogDescription>
+                  Choose a sound for your medicine reminders
+                </DialogDescription>
+              </DialogHeader>
+              
+              <div className="py-4">
+                <RadioGroup 
+                  value={selectedSound} 
+                  onValueChange={setSelectedSound}
+                  className="space-y-3"
+                >
+                  {notificationSounds.map((sound) => (
+                    <div key={sound.id} className="flex items-center justify-between space-x-2 border p-3 rounded-md">
+                      <div className="flex items-center space-x-2">
+                        <RadioGroupItem value={sound.id} id={sound.id} />
+                        <Label htmlFor={sound.id} className="font-medium cursor-pointer">
+                          {sound.name}
+                        </Label>
+                      </div>
+                      
+                      <Button 
+                        type="button" 
+                        variant="outline" 
+                        size="sm"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          const audio = new Audio(sound.url);
+                          audio.play().catch(err => console.error("Error playing sound:", err));
+                        }}
+                      >
+                        Test
+                      </Button>
+                    </div>
+                  ))}
+                </RadioGroup>
+              </div>
+              
+              <div className="flex items-center justify-between pt-2">
+                <div className="flex items-center space-x-2">
+                  <Switch 
+                    checked={soundEnabled}
+                    onCheckedChange={setSoundEnabled}
+                    id="sound-enabled"
+                  />
+                  <Label htmlFor="sound-enabled">Enable sounds</Label>
+                </div>
+                
+                <Button 
+                  onClick={() => {
+                    // Save sound preferences
+                    localStorage.setItem('reminderSound', selectedSound);
+                    localStorage.setItem('soundEnabled', soundEnabled.toString());
+                    setSoundsDialogOpen(false);
+                    toast.success("Sound settings saved");
+                  }}
+                >
+                  Save Settings
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+          
           <div className="flex items-center space-x-2 mr-2">
             <button 
               className={`flex items-center space-x-2 text-sm ${notificationsEnabled ? 'text-primary' : 'text-muted-foreground'} hover:text-foreground transition-colors`}
               onClick={requestNotificationPermission}
+              disabled={notificationPermission === "denied"}
             >
               <Bell className="h-4 w-4" />
-              <span>{notificationsEnabled ? "Notifications On" : "Enable Notifications"}</span>
+              <span>
+                {notificationPermission === "denied" 
+                  ? "Notifications Blocked" 
+                  : notificationsEnabled 
+                    ? "Notifications On" 
+                    : "Enable Notifications"}
+              </span>
             </button>
           </div>
           
@@ -602,10 +820,10 @@ export function MedicineReminder() {
       </div>
 
       {/* Hidden audio element for notification sound */}
-      <audio id="reminder-sound" src="https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3" />
+      <audio id="reminder-sound" ref={alarmAudioRef} />
 
       {/* Check if user has notifications enabled and prompt them if not */}
-      {(!notificationsEnabled && reminders.length > 0) && (
+      {(!notificationsEnabled && reminders.length > 0 && notificationPermission !== "denied") && (
         <Card className="bg-blue-50 border-blue-200 mb-4">
           <CardContent className="flex items-center justify-between p-4">
             <div className="flex items-center">
@@ -617,6 +835,40 @@ export function MedicineReminder() {
             </div>
             <Button size="sm" onClick={requestNotificationPermission}>
               Enable
+            </Button>
+          </CardContent>
+        </Card>
+      )}
+      
+      {(notificationPermission === "denied" && reminders.length > 0) && (
+        <Card className="bg-amber-50 border-amber-200 mb-4">
+          <CardContent className="flex items-center justify-between p-4">
+            <div className="flex items-center">
+              <AlertCircle className="h-5 w-5 text-amber-500 mr-3" />
+              <div>
+                <p className="font-medium">Notifications are blocked</p>
+                <p className="text-sm text-muted-foreground">Please enable notifications in your browser settings to receive medicine reminders</p>
+              </div>
+            </div>
+            <Button 
+              size="sm" 
+              variant="outline"
+              onClick={() => {
+                toast.info(
+                  <div className="text-sm">
+                    <p className="font-medium mb-1">How to enable notifications:</p>
+                    <ol className="list-decimal pl-5 space-y-1">
+                      <li>Click the lock/info icon in your browser's address bar</li>
+                      <li>Find "Notifications" settings</li>
+                      <li>Change from "Block" to "Allow"</li>
+                      <li>Refresh this page</li>
+                    </ol>
+                  </div>, 
+                  { duration: 10000 }
+                );
+              }}
+            >
+              Learn How
             </Button>
           </CardContent>
         </Card>
