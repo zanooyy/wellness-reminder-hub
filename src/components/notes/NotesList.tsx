@@ -7,7 +7,7 @@ import { supabase, Note } from "@/utils/supabase";
 import { NoteEditor } from "./NoteEditor";
 import { toast } from "sonner";
 import { 
-  FilePlus, FileText, Pencil, Trash, Clock, Search, StickyNote
+  FilePlus, FileText, Pencil, Trash, Clock, Search, StickyNote, Image
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
@@ -117,6 +117,16 @@ export function NotesList() {
     });
   };
 
+  // Get image urls from note
+  const getNoteImages = (note: Note): string[] => {
+    if (!note.image_urls) return [];
+    try {
+      return JSON.parse(note.image_urls);
+    } catch {
+      return [];
+    }
+  };
+
   if (showEditor) {
     return (
       <NoteEditor
@@ -179,48 +189,77 @@ export function NotesList() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredNotes.map((note) => (
-            <Card key={note.id} className="overflow-hidden animate-scale-in card-hover">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-start justify-between">
-                  <div className="flex items-center">
-                    <FileText className="h-5 w-5 mr-2 text-primary flex-shrink-0" />
-                    <span className="truncate">{note.title}</span>
-                  </div>
+          {filteredNotes.map((note) => {
+            const noteImages = getNoteImages(note);
+            return (
+              <Card key={note.id} className="overflow-hidden animate-scale-in card-hover">
+                <CardHeader className="pb-2">
+                  <CardTitle className="flex items-start justify-between">
+                    <div className="flex items-center">
+                      <FileText className="h-5 w-5 mr-2 text-primary flex-shrink-0" />
+                      <span className="truncate">{note.title}</span>
+                    </div>
+                    
+                    <div className="flex space-x-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={() => editNote(note)}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 text-destructive"
+                        onClick={() => deleteNote(note.id)}
+                      >
+                        <Trash className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </CardTitle>
+                </CardHeader>
+                
+                <CardContent className="pb-2 space-y-2">
+                  <p className="text-muted-foreground line-clamp-3">{note.content}</p>
                   
-                  <div className="flex space-x-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8"
-                      onClick={() => editNote(note)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 text-destructive"
-                      onClick={() => deleteNote(note.id)}
-                    >
-                      <Trash className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              
-              <CardContent className="pb-2">
-                <p className="text-muted-foreground line-clamp-3">{note.content}</p>
-              </CardContent>
-              
-              <CardFooter className="pt-2 text-xs text-muted-foreground border-t">
-                <span className="flex items-center">
-                  <Clock className="h-3.5 w-3.5 mr-1" />
-                  {formatDate(note.created_at)}
-                </span>
-              </CardFooter>
-            </Card>
-          ))}
+                  {noteImages.length > 0 && (
+                    <div className="flex -mx-1 mt-2 overflow-x-auto pb-2">
+                      {noteImages.slice(0, 3).map((url, idx) => (
+                        <div key={idx} className="px-1 flex-shrink-0">
+                          <img 
+                            src={url} 
+                            alt={`Medicine ${idx+1}`} 
+                            className="h-16 w-16 object-cover rounded"
+                          />
+                        </div>
+                      ))}
+                      {noteImages.length > 3 && (
+                        <div className="px-1 flex-shrink-0 flex items-center justify-center h-16 w-16 rounded bg-muted text-muted-foreground font-medium text-sm">
+                          +{noteImages.length - 3}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+                
+                <CardFooter className="pt-2 text-xs text-muted-foreground border-t flex justify-between">
+                  <span className="flex items-center">
+                    <Clock className="h-3.5 w-3.5 mr-1" />
+                    {formatDate(note.created_at)}
+                  </span>
+                  
+                  {noteImages.length > 0 && (
+                    <span className="flex items-center">
+                      <Image className="h-3.5 w-3.5 mr-1" />
+                      {noteImages.length} {noteImages.length === 1 ? 'image' : 'images'}
+                    </span>
+                  )}
+                </CardFooter>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

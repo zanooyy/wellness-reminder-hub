@@ -53,8 +53,8 @@ export const checkDueReminders = (
   if (reminders.length === 0) return [];
   
   const currentTime = new Date();
-  const currentHour = currentTime.getHours().toString().padStart(2, '0');
-  const currentMinute = currentTime.getMinutes().toString().padStart(2, '0');
+  const currentHour = currentTime.getHours();
+  const currentMinute = currentTime.getMinutes();
   
   const dueReminders = reminders.filter(reminder => {
     // Skip snoozed reminders
@@ -62,15 +62,11 @@ export const checkDueReminders = (
       return false;
     }
     
-    // Check if the time is within 1 minute of the current time
-    const [reminderHour, reminderMinute] = reminder.time.split(':');
-    const reminderDate = new Date();
-    reminderDate.setHours(parseInt(reminderHour), parseInt(reminderMinute));
+    // Parse reminder time (HH:MM format)
+    const [reminderHour, reminderMinute] = reminder.time.split(':').map(Number);
     
-    const diffMs = Math.abs(currentTime.getTime() - reminderDate.getTime());
-    const diffMinutes = Math.floor(diffMs / 60000);
-    
-    return diffMinutes < 1;
+    // Check if the time exactly matches the current time (exact minute)
+    return currentHour === reminderHour && currentMinute === reminderMinute;
   });
   
   return dueReminders;

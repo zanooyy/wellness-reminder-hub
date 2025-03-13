@@ -29,6 +29,7 @@ export const soundCategories = notificationSounds.reduce((acc, sound) => {
 export function useReminderSounds() {
   // Create a reference to the audio element
   const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
+  const testAudioRef = useRef<HTMLAudioElement | null>(null);
   
   // State for sound preferences
   const [soundEnabled, setSoundEnabled] = useState(true);
@@ -159,22 +160,34 @@ export function useReminderSounds() {
     }
     
     try {
+      // Stop any previous test sound
+      if (testAudioRef.current) {
+        testAudioRef.current.pause();
+        testAudioRef.current.currentTime = 0;
+      }
+
       // Find the selected sound
       const allSounds = getAllSounds();
-      const sound = allSounds.find(s => s.id === (soundId || selectedSound));
-      if (!sound) return;
+      const soundToPlay = soundId ? allSounds.find(s => s.id === soundId) : allSounds.find(s => s.id === selectedSound);
+      
+      if (!soundToPlay) {
+        toast.error("Sound not found");
+        return;
+      }
       
       // Create a new audio element for the test
-      const audio = new Audio(sound.url);
+      const audio = new Audio(soundToPlay.url);
       audio.volume = volume / 100; // Convert to 0-1 range
+      testAudioRef.current = audio;
       
       // Play the sound
       audio.play().catch(err => {
-        console.error("Error playing test sound:", err);
-        toast.error("Could not play test sound");
+        console.error("Error playing test sound:", err, soundToPlay);
+        toast.error(`Could not play test sound: ${soundToPlay.name}`);
       });
     } catch (error) {
       console.error("Error playing test sound:", error);
+      toast.error("Could not play test sound");
     }
   };
   
@@ -184,6 +197,7 @@ export function useReminderSounds() {
       if (alarmAudioRef.current) {
         alarmAudioRef.current.pause();
         alarmAudioRef.current.currentTime = 0;
+        alarmAudioRef.current = null;
       }
       setActiveAlarms([]);
     } catch (error) {
