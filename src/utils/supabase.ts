@@ -50,14 +50,21 @@ export const saveThemePreference = async (userId: string, theme: string) => {
   if (!userId) return;
   
   try {
+    console.log(`Saving theme preference "${theme}" for user ${userId}`);
     const { error } = await supabase
       .from('profiles')
       .update({ theme_preference: theme })
       .eq('id', userId);
       
     if (error) throw error;
+    
+    // Also save to localStorage as a backup
+    localStorage.setItem('theme-preference', theme);
+    
+    return true;
   } catch (error) {
     console.error('Error saving theme preference:', error);
+    return false;
   }
 };
 
@@ -66,6 +73,10 @@ export const getThemePreference = async (userId: string): Promise<string | null>
   if (!userId) return null;
   
   try {
+    // First check if we have a theme preference in localStorage
+    const localTheme = localStorage.getItem('theme-preference');
+    
+    // Then check in the database
     const { data, error } = await supabase
       .from('profiles')
       .select('theme_preference')
@@ -74,9 +85,15 @@ export const getThemePreference = async (userId: string): Promise<string | null>
       
     if (error) throw error;
     
-    return data?.theme_preference || null;
+    // Update localStorage if we got a theme from the database
+    if (data?.theme_preference) {
+      localStorage.setItem('theme-preference', data.theme_preference);
+    }
+    
+    return data?.theme_preference || localTheme || null;
   } catch (error) {
     console.error('Error getting theme preference:', error);
-    return null;
+    // Fall back to localStorage if the database query fails
+    return localStorage.getItem('theme-preference');
   }
 };

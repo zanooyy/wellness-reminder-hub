@@ -52,9 +52,14 @@ export const checkDueReminders = (
 ) => {
   if (reminders.length === 0) return [];
   
-  const currentTime = new Date();
-  const currentHour = currentTime.getHours();
-  const currentMinute = currentTime.getMinutes();
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  const currentSeconds = now.getSeconds();
+  
+  // Only check when we're within the first 10 seconds of a minute
+  // This helps ensure we don't miss the exact minute
+  if (currentSeconds > 10) return [];
   
   const dueReminders = reminders.filter(reminder => {
     // Skip snoozed reminders
@@ -65,7 +70,7 @@ export const checkDueReminders = (
     // Parse reminder time (HH:MM format)
     const [reminderHour, reminderMinute] = reminder.time.split(':').map(Number);
     
-    // Check if the time exactly matches the current time (exact minute)
+    // Check if the time matches the current time (exact minute)
     return currentHour === reminderHour && currentMinute === reminderMinute;
   });
   
@@ -81,4 +86,26 @@ export const isReminderDueNow = (reminderTime: string): boolean => {
   const currentMinute = now.getMinutes();
   
   return currentHour === reminderHour && currentMinute === reminderMinute;
+};
+
+// Convert a time string (HH:MM) to milliseconds since midnight
+export const timeStringToMilliseconds = (timeString: string): number => {
+  const [hours, minutes] = timeString.split(':').map(Number);
+  return (hours * 60 * 60 * 1000) + (minutes * 60 * 1000);
+};
+
+// Get the next occurrence of a time
+export const getNextOccurrence = (timeString: string): Date => {
+  const [hours, minutes] = timeString.split(':').map(Number);
+  const now = new Date();
+  const result = new Date();
+  
+  result.setHours(hours, minutes, 0, 0);
+  
+  // If the time has already passed today, set it for tomorrow
+  if (result < now) {
+    result.setDate(result.getDate() + 1);
+  }
+  
+  return result;
 };

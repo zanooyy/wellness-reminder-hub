@@ -3,9 +3,10 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Reminder } from "@/utils/supabase";
 import { toast } from "sonner";
+import { Link } from "react-router-dom";
 import { 
   AlarmClockCheck, AlarmPlus, Clock, Pill, Bell, BellRing, 
-  ArrowUpDown, VolumeX, Volume2, Settings 
+  ArrowUpDown, VolumeX, Volume2, Settings, Music, ArrowLeft 
 } from "lucide-react";
 
 // Custom hooks
@@ -21,7 +22,7 @@ import { NotificationSettingsDialog } from "./components/NotificationSettingsDia
 import { NotificationPermissionAlert } from "./components/NotificationAlert";
 
 // Utilities
-import { checkDueReminders } from "./utils/reminderUtils";
+import { checkDueReminders, getNextOccurrence } from "./utils/reminderUtils";
 
 export function MedicineReminder() {
   // State for form dialog
@@ -92,11 +93,55 @@ export function MedicineReminder() {
     };
   }, [reminders, notificationsEnabled]);
   
-  // Check for due reminders every minute
+  // Set up timers for all reminders
   useEffect(() => {
     if (reminders.length === 0) return;
     
-    const checkInterval = setInterval(() => {
+    // Clear any existing timers
+    const timers: NodeJS.Timeout[] = [];
+    
+    // Set up precise timers for each reminder
+    reminders.forEach(reminder => {
+      const nextOccurrence = getNextOccurrence(reminder.time);
+      const timeUntilReminder = nextOccurrence.getTime() - Date.now();
+      
+      // Only set timers for reminders in the future
+      if (timeUntilReminder > 0) {
+        const timer = setTimeout(() => {
+          // Only trigger if not snoozed
+          if (!isReminderSnoozed || !isReminderSnoozed(reminder.id)) {
+            playAlarmSound(reminder.id);
+            sendNotification(reminder);
+            
+            // Show toast notification
+            toast.info(
+              <div className="flex flex-col gap-1">
+                <div className="font-bold">Medicine Reminder</div>
+                <div>Time to take {reminder.medicine_name}</div>
+                {reminder.dosage && <div className="text-sm">Dosage: {reminder.dosage}</div>}
+              </div>,
+              {
+                duration: 10000,
+                icon: <BellRing className="h-5 w-5 text-blue-500" />,
+                action: {
+                  label: "Snooze",
+                  onClick: () => {
+                    snoozeReminder(reminder.id, 5);
+                    stopAllAlarms();
+                    toast.success(`Reminder for ${reminder.medicine_name} snoozed for 5 minutes`);
+                  },
+                }
+              }
+            );
+          }
+        }, timeUntilReminder);
+        
+        timers.push(timer);
+      }
+    });
+    
+    // Check for due reminders immediately when component mounts or reminders change
+    const checkNow = () => {
       const dueReminders = checkDueReminders(
         reminders, 
         playAlarmSound, 
@@ -107,8 +152,8 @@ export function MedicineReminder() {
       
       if (dueReminders.length > 0) {
         dueReminders.forEach(reminder => {
-          // Play alarm sound
           playAlarmSound(reminder.id);
+          sendNotification(reminder);
           
           // Show toast notification
           toast.info(
@@ -130,30 +175,21 @@ export function MedicineReminder() {
               }
             }
           );
-          
-          // Send browser notification
-          sendNotification(reminder);
         });
       }
-    }, 30000); // Check every 30 seconds
+    };
     
-    // Initial check when component mounts or reminders change
-    const initialDueReminders = checkDueReminders(
-      reminders, 
-      playAlarmSound, 
-      stopAllAlarms, 
-      sendNotification,
-      isReminderSnoozed
-    );
+    // Check immediately
+    checkNow();
     
-    if (initialDueReminders.length > 0) {
-      initialDueReminders.forEach(reminder => {
-        playAlarmSound(reminder.id);
-        sendNotification(reminder);
-      });
-    }
+    // Also perform regular checks every 15 seconds as a fallback
+    const regularInterval = setInterval(checkNow, 15000);
     
-    return () => clearInterval(checkInterval);
+    return () => {
+      // Clear all timers on cleanup
+      timers.forEach(clearTimeout);
+      clearInterval(regularInterval);
+    };
   }, [reminders, soundEnabled, notificationsEnabled, selectedSound]);
   
   // Open dialog to edit a reminder
@@ -178,11 +214,18 @@ export function MedicineReminder() {
   return (
     <div className="space-y-8">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold mb-1">Medicine Reminders</h1>
-          <p className="text-muted-foreground">
-            Set reminders for your medications to never miss a dose
-          </p>
+        <div className="flex items-center">
+          <Link to="/dashboard">
+            <Button variant="ghost" size="icon" className="mr-2">
+              <ArrowLeft className="h-5 w-5" />
+            </Button>
+          </Link>
+          <div>
+            <h1 className="text-2xl font-bold mb-1">Medicine Reminders</h1>
+            <p className="text-muted-foreground">
+              Set reminders for your medications to never miss a dose
+            </p>
+          </div>
         </div>
         
         <div className="flex flex-wrap gap-2 items-center">
@@ -193,9 +236,9 @@ export function MedicineReminder() {
               aria-label={soundEnabled ? "Disable sound" : "Enable sound"}
             >
               {soundEnabled ? (
-                <><Volume2 className="h-4 w-4" /><span>Sound On</span></>
+                <><Volume2 className="h-4 w-4" /><span className="hidden sm:inline">Sound On</span></>
               ) : (
-                <><VolumeX className="h-4 w-4" /><span>Sound Off</span></>
+                <><VolumeX className="h-4 w-4" /><span className="hidden sm:inline">Sound Off</span></>
               )}
             </button>
           </div>
@@ -222,7 +265,7 @@ export function MedicineReminder() {
               disabled={notificationPermission === "denied"}
             >
               <Bell className="h-4 w-4" />
-              <span>
+              <span className="hidden sm:inline">
                 {notificationPermission === "denied" 
                   ? "Notifications Blocked" 
                   : notificationsEnabled 
@@ -240,7 +283,7 @@ export function MedicineReminder() {
               className="flex items-center gap-1 text-xs"
             >
               <Clock className="h-3.5 w-3.5" />
-              Time
+              <span className="hidden sm:inline">Time</span>
               <ArrowUpDown className={`h-3 w-3 ${sortOrder === "time" ? "opacity-100" : "opacity-50"}`} />
             </Button>
             
@@ -251,10 +294,20 @@ export function MedicineReminder() {
               className="flex items-center gap-1 text-xs"
             >
               <Pill className="h-3.5 w-3.5" />
-              Name
+              <span className="hidden sm:inline">Name</span>
               <ArrowUpDown className={`h-3 w-3 ${sortOrder === "name" ? "opacity-100" : "opacity-50"}`} />
             </Button>
           </div>
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSoundsDialogOpen(true)}
+            className="flex items-center gap-1"
+          >
+            <Music className="h-4 w-4" />
+            <span className="hidden sm:inline">Ringtones</span>
+          </Button>
           
           <AddReminderButton
             onClick={() => {

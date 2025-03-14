@@ -7,14 +7,30 @@ export const notificationSounds = [
   // Bells category
   { id: "bell", name: "Bell", url: "/sounds/bell.mp3", category: "Bells" },
   { id: "chime", name: "Chime", url: "/sounds/chime.mp3", category: "Bells" },
-  { id: "alert", name: "Alert", url: "/sounds/alert.mp3", category: "Alerts" },
-  { id: "pill-time", name: "Pill Time", url: "/sounds/pill-time.mp3", category: "Alerts" },
-  // Adding more sound options
   { id: "gentle-chime", name: "Gentle Chime", url: "/sounds/gentle-chime.mp3", category: "Bells" },
   { id: "soft-bell", name: "Soft Bell", url: "/sounds/soft-bell.mp3", category: "Bells" },
+  { id: "school-bell", name: "School Bell", url: "https://assets.mixkit.co/active_storage/sfx/212/212-preview.mp3", category: "Bells" },
+  { id: "doorbell", name: "Doorbell", url: "https://assets.mixkit.co/active_storage/sfx/213/213-preview.mp3", category: "Bells" },
+  
+  // Alerts category
+  { id: "alert", name: "Alert", url: "/sounds/alert.mp3", category: "Alerts" },
+  { id: "pill-time", name: "Pill Time", url: "/sounds/pill-time.mp3", category: "Alerts" },
   { id: "medication-time", name: "Medication Time", url: "/sounds/medication-time.mp3", category: "Alerts" },
   { id: "soft-alert", name: "Soft Alert", url: "/sounds/soft-alert.mp3", category: "Alerts" },
   { id: "notification", name: "Notification", url: "/sounds/notification.mp3", category: "Alerts" },
+  { id: "emergency", name: "Emergency", url: "https://assets.mixkit.co/active_storage/sfx/990/990-preview.mp3", category: "Alerts" },
+  
+  // Alarms category
+  { id: "clock-alarm", name: "Clock Alarm", url: "https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3", category: "Alarms" },
+  { id: "digital-alarm", name: "Digital Alarm", url: "https://assets.mixkit.co/active_storage/sfx/2870/2870-preview.mp3", category: "Alarms" },
+  { id: "morning-alarm", name: "Morning Alarm", url: "https://assets.mixkit.co/active_storage/sfx/2909/2909-preview.mp3", category: "Alarms" },
+  { id: "buzzer", name: "Buzzer", url: "https://assets.mixkit.co/active_storage/sfx/259/259-preview.mp3", category: "Alarms" },
+  
+  // Tones category
+  { id: "beep", name: "Beep", url: "https://assets.mixkit.co/active_storage/sfx/2866/2866-preview.mp3", category: "Tones" },
+  { id: "ding", name: "Ding", url: "https://assets.mixkit.co/active_storage/sfx/2872/2872-preview.mp3", category: "Tones" },
+  { id: "ping", name: "Ping", url: "https://assets.mixkit.co/active_storage/sfx/2874/2874-preview.mp3", category: "Tones" },
+  { id: "positive", name: "Positive", url: "https://assets.mixkit.co/active_storage/sfx/221/221-preview.mp3", category: "Tones" },
 ];
 
 // Group sounds by category
@@ -27,7 +43,7 @@ export const soundCategories = notificationSounds.reduce((acc, sound) => {
 }, {} as Record<string, typeof notificationSounds>);
 
 export function useReminderSounds() {
-  // Create a reference to the audio element
+  // Create references for audio elements
   const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
   const testAudioRef = useRef<HTMLAudioElement | null>(null);
   
@@ -37,6 +53,7 @@ export function useReminderSounds() {
   const [activeAlarms, setActiveAlarms] = useState<string[]>([]);
   const [volume, setVolume] = useState(80); // Default volume (0-100)
   const [customSounds, setCustomSounds] = useState<Array<{id: string, name: string, url: string, category: string}>>([]);
+  const [soundLoaded, setSoundLoaded] = useState(false);
   
   // Effect to load preferences from localStorage
   useEffect(() => {
@@ -63,19 +80,49 @@ export function useReminderSounds() {
         console.error("Error parsing custom sounds:", e);
       }
     }
+    
+    setSoundLoaded(true);
   }, []);
   
   // Save volume to localStorage when it changes
   useEffect(() => {
-    localStorage.setItem('soundVolume', volume.toString());
-  }, [volume]);
+    if (soundLoaded) {
+      localStorage.setItem('soundVolume', volume.toString());
+    }
+  }, [volume, soundLoaded]);
   
   // Save custom sounds to localStorage when they change
   useEffect(() => {
-    if (customSounds.length > 0) {
+    if (soundLoaded && customSounds.length > 0) {
       localStorage.setItem('customSounds', JSON.stringify(customSounds));
     }
-  }, [customSounds]);
+  }, [customSounds, soundLoaded]);
+
+  // Save selected sound and sound enabled to localStorage when they change
+  useEffect(() => {
+    if (soundLoaded) {
+      localStorage.setItem('reminderSound', selectedSound);
+      localStorage.setItem('soundEnabled', soundEnabled.toString());
+    }
+  }, [selectedSound, soundEnabled, soundLoaded]);
+
+  // Preload sound when selectedSound changes
+  useEffect(() => {
+    if (!soundEnabled || !selectedSound) return;
+    
+    const preloadSound = () => {
+      const allSounds = getAllSounds();
+      const sound = allSounds.find(s => s.id === selectedSound);
+      
+      if (sound) {
+        const audio = new Audio();
+        audio.src = sound.url;
+        audio.load();
+      }
+    };
+    
+    preloadSound();
+  }, [selectedSound, soundEnabled]);
 
   // Add a custom sound
   const addCustomSound = (name: string, url: string) => {
@@ -98,7 +145,6 @@ export function useReminderSounds() {
     // If the removed sound was selected, switch to default
     if (selectedSound === id) {
       setSelectedSound("bell");
-      localStorage.setItem('reminderSound', "bell");
     }
   };
   
@@ -125,6 +171,7 @@ export function useReminderSounds() {
       // Create a new audio element for this alarm
       const audio = new Audio(sound.url);
       audio.volume = volume / 100; // Convert to 0-1 range
+      audio.preload = "auto"; // Preload the audio
       
       // Set a reference to the audio if we don't have one yet
       if (!alarmAudioRef.current) {
@@ -135,7 +182,9 @@ export function useReminderSounds() {
       audio.addEventListener('ended', () => {
         // Loop the sound
         if (activeAlarms.includes(reminderId)) {
-          audio.play().catch(err => console.error("Error playing sound:", err));
+          setTimeout(() => {
+            audio.play().catch(err => console.error("Error playing sound:", err));
+          }, 500); // Short delay between loops
         }
       });
       
@@ -145,6 +194,11 @@ export function useReminderSounds() {
         setActiveAlarms(prev => [...prev, reminderId]);
       }).catch(err => {
         console.error("Error playing sound:", err);
+        // Try again with user interaction
+        document.addEventListener('click', function playOnClick() {
+          audio.play().catch(e => console.error("Still couldn't play sound:", e));
+          document.removeEventListener('click', playOnClick);
+        }, { once: true });
       });
     } catch (error) {
       console.error("Error playing alarm sound:", error);
@@ -178,12 +232,20 @@ export function useReminderSounds() {
       // Create a new audio element for the test
       const audio = new Audio(soundToPlay.url);
       audio.volume = volume / 100; // Convert to 0-1 range
+      audio.preload = "auto";
       testAudioRef.current = audio;
       
       // Play the sound
       audio.play().catch(err => {
         console.error("Error playing test sound:", err, soundToPlay);
         toast.error(`Could not play test sound: ${soundToPlay.name}`);
+        
+        // Try again with user interaction
+        toast.info("Click anywhere to try playing the sound again");
+        document.addEventListener('click', function playOnClick() {
+          audio.play().catch(e => console.error("Still couldn't play sound:", e));
+          document.removeEventListener('click', playOnClick);
+        }, { once: true });
       });
     } catch (error) {
       console.error("Error playing test sound:", error);
@@ -209,7 +271,6 @@ export function useReminderSounds() {
   const toggleSound = () => {
     const newValue = !soundEnabled;
     setSoundEnabled(newValue);
-    localStorage.setItem('soundEnabled', newValue.toString());
     
     if (!newValue) {
       // Stop all active sounds if we're disabling sound

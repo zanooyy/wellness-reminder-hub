@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { RadioGroup, Radio } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { Settings, Music, VolumeX, Volume, Volume2, Plus, X } from "lucide-react";
+import { Settings, Music, VolumeX, Volume, Volume2, Plus, X, ArrowLeft } from "lucide-react";
 import { notificationSounds, soundCategories } from "../hooks/useReminderSounds";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
@@ -60,13 +60,30 @@ export function NotificationSettingsDialog({
       // Test if URL is valid by creating an audio element
       const audio = new Audio(newSoundUrl);
       
-      if (onAddCustomSound) {
-        const newSound = onAddCustomSound(newSoundName, newSoundUrl);
-        toast.success(`Added "${newSoundName}" to custom sounds`);
-        onSelectSound(newSound.id);
-        setNewSoundName("");
-        setNewSoundUrl("");
-        setShowAddForm(false);
+      // Test the audio to make sure it works
+      audio.volume = 0.2; // Low volume for testing
+      const playPromise = audio.play();
+      
+      if (playPromise !== undefined) {
+        playPromise.then(() => {
+          // Audio is playing successfully
+          setTimeout(() => {
+            audio.pause();
+            audio.currentTime = 0;
+            
+            if (onAddCustomSound) {
+              const newSound = onAddCustomSound(newSoundName, newSoundUrl);
+              toast.success(`Added "${newSoundName}" to custom sounds`);
+              onSelectSound(newSound.id);
+              setNewSoundName("");
+              setNewSoundUrl("");
+              setShowAddForm(false);
+            }
+          }, 1000); // Play for 1 second to verify sound
+        }).catch(error => {
+          toast.error("Error playing sound. Please check the URL and try again.");
+          console.error("Error testing sound:", error);
+        });
       }
     } catch (error) {
       toast.error("Invalid sound URL. Please provide a valid audio file URL");
@@ -94,13 +111,13 @@ export function NotificationSettingsDialog({
           size="sm" 
           className="flex items-center gap-1"
         >
-          <Settings className="h-4 w-4" />
-          <span>Sound Settings</span>
+          <Music className="h-4 w-4 mr-1" />
+          <span className="hidden sm:inline">Ringtones</span>
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>Notification Sound Settings</DialogTitle>
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="flex flex-row items-center justify-between">
+          <DialogTitle>Reminder Ringtone Settings</DialogTitle>
           <DialogDescription>
             Choose a sound for your medicine reminders
           </DialogDescription>
