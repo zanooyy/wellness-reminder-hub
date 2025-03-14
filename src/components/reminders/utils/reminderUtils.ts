@@ -42,7 +42,7 @@ export const isReminderDueSoon = (reminderTime: string): boolean => {
   return timeDiff <= 30 * 60 * 1000;
 };
 
-// Check for due reminders
+// Improved precision for checking due reminders
 export const checkDueReminders = (
   reminders: Reminder[], 
   playAlarmSound: (id: string) => void, 
@@ -70,4 +70,15 @@ export const checkDueReminders = (
   });
   
   return dueReminders;
+};
+
+// Function to check if a specific reminder is due right now (more precise)
+export const isReminderDueNow = (reminderTime: string): boolean => {
+  const [reminderHour, reminderMinute] = reminderTime.split(':').map(Number);
+  
+  const now = new Date();
+  const currentHour = now.getHours();
+  const currentMinute = now.getMinutes();
+  
+  return currentHour === reminderHour && currentMinute === reminderMinute;
 };

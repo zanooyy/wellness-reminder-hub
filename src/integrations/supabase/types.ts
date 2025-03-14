@@ -96,9 +96,11 @@ export type Database = {
           dosage: string | null
           frequency: string
           id: string
+          image_url: string | null
           medicine_name: string
           notes: string | null
           time: string
+          updated_at: string | null
           user_id: string
         }
         Insert: {
@@ -106,9 +108,11 @@ export type Database = {
           dosage?: string | null
           frequency: string
           id?: string
+          image_url?: string | null
           medicine_name: string
           notes?: string | null
           time: string
+          updated_at?: string | null
           user_id: string
         }
         Update: {
@@ -116,9 +120,11 @@ export type Database = {
           dosage?: string | null
           frequency?: string
           id?: string
+          image_url?: string | null
           medicine_name?: string
           notes?: string | null
           time?: string
+          updated_at?: string | null
           user_id?: string
         }
         Relationships: []

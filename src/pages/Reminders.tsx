@@ -1,16 +1,39 @@
 
-import { useState } from "react";
+import { useEffect } from "react";
 import { DashboardLayout } from "@/layouts/DashboardLayout";
 import { MedicineReminder } from "@/components/reminders/MedicineReminder";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import { Moon, Sun } from "lucide-react";
+import { useAuth } from "@/hooks/useAuth";
+import { saveThemePreference, getThemePreference } from "@/utils/supabase";
 
 const Reminders = () => {
   const { theme, setTheme } = useTheme();
+  const { user } = useAuth();
   
-  const toggleTheme = () => {
-    setTheme(theme === "dark" ? "light" : "dark");
+  useEffect(() => {
+    // Load theme preference from profile when component mounts
+    const loadThemePreference = async () => {
+      if (user) {
+        const savedTheme = await getThemePreference(user.id);
+        if (savedTheme) {
+          setTheme(savedTheme);
+        }
+      }
+    };
+    
+    loadThemePreference();
+  }, [user, setTheme]);
+  
+  const toggleTheme = async () => {
+    const newTheme = theme === "dark" ? "light" : "dark";
+    setTheme(newTheme);
+    
+    // Save theme preference to profile
+    if (user) {
+      await saveThemePreference(user.id, newTheme);
+    }
   };
 
   return (

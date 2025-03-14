@@ -44,3 +44,39 @@ export type Note = {
   updated_at: string;
   image_urls?: string;
 };
+
+// Function to persist theme preference to the profile
+export const saveThemePreference = async (userId: string, theme: string) => {
+  if (!userId) return;
+  
+  try {
+    const { error } = await supabase
+      .from('profiles')
+      .update({ theme_preference: theme })
+      .eq('id', userId);
+      
+    if (error) throw error;
+  } catch (error) {
+    console.error('Error saving theme preference:', error);
+  }
+};
+
+// Function to retrieve theme preference from profile
+export const getThemePreference = async (userId: string): Promise<string | null> => {
+  if (!userId) return null;
+  
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('theme_preference')
+      .eq('id', userId)
+      .single();
+      
+    if (error) throw error;
+    
+    return data?.theme_preference || null;
+  } catch (error) {
+    console.error('Error getting theme preference:', error);
+    return null;
+  }
+};

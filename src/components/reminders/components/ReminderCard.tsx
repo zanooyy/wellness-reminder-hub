@@ -28,6 +28,7 @@ export function ReminderCard({
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [snoozeDialogOpen, setSnoozeDialogOpen] = useState(false);
   const { snoozeReminder, isReminderSnoozed, getSnoozeRemaining } = useNotifications();
+  const [imageError, setImageError] = useState(false);
   
   const borderColor = getBorderColor(reminder.frequency);
   const dueSoon = isReminderDueSoon(reminder.time);
@@ -41,6 +42,7 @@ export function ReminderCard({
     if (onSnooze) {
       onSnooze(reminder.id, minutes);
     }
+    toast.success(`Reminder snoozed for ${minutes} minutes`);
   };
   
   return (
@@ -52,14 +54,21 @@ export function ReminderCard({
         <CardContent className="p-4">
           <div className="flex justify-between items-start mb-3">
             <div className="flex gap-3">
-              {reminder.image_url && (
+              {reminder.image_url && !imageError ? (
                 <div className="w-12 h-12 rounded-md overflow-hidden border flex-shrink-0">
                   <img 
                     src={reminder.image_url} 
                     alt={reminder.medicine_name}
-                    className="w-full h-full object-cover" 
+                    className="w-full h-full object-cover"
+                    onError={() => setImageError(true)}
                   />
                 </div>
+              ) : (
+                reminder.image_url && imageError && (
+                  <div className="w-12 h-12 rounded-md border flex-shrink-0 flex items-center justify-center bg-muted">
+                    <Image className="h-6 w-6 text-muted-foreground" />
+                  </div>
+                )
               )}
               <div>
                 <h3 className="font-bold text-lg">{reminder.medicine_name}</h3>
@@ -68,7 +77,7 @@ export function ReminderCard({
                   <span>{formatTime(reminder.time)}</span>
                   
                   {isSnoozed && (
-                    <span className="ml-2 text-xs px-2 py-0.5 bg-amber-100 text-amber-800 rounded-full flex items-center">
+                    <span className="ml-2 text-xs px-2 py-0.5 bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200 rounded-full flex items-center">
                       <AlarmClock className="h-3 w-3 mr-1" />
                       Snoozed ({snoozeRemaining}m)
                     </span>
@@ -79,7 +88,7 @@ export function ReminderCard({
             
             <div className="flex">
               {dueSoon && !isSnoozed && (
-                <span className="text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full flex items-center">
+                <span className="text-xs font-medium text-amber-700 bg-amber-100 dark:bg-amber-900 dark:text-amber-200 px-2 py-0.5 rounded-full flex items-center">
                   <Bell className="h-3 w-3 mr-1" />
                   Due soon
                 </span>
