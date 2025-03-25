@@ -1,3 +1,4 @@
+
 import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
@@ -10,7 +11,7 @@ import {
   Dialog, DialogContent, DialogDescription, 
   DialogHeader, DialogTitle, DialogFooter 
 } from "@/components/ui/dialog";
-import { supabase } from "@/utils/supabase";
+import { supabase } from "@/integrations/supabase/client";
 
 export function LoginForm() {
   const { signIn } = useAuth();
@@ -49,6 +50,8 @@ export function LoginForm() {
     setIsLoading(true);
     try {
       await signIn(email, password);
+    } catch (error) {
+      console.error("Login error:", error);
     } finally {
       setIsLoading(false);
     }

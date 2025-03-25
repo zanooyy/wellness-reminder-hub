@@ -1,6 +1,6 @@
 
 import { useEffect, useState, createContext, useContext, ReactNode } from 'react';
-import { supabase } from '@/utils/supabase';
+import { supabase } from '@/integrations/supabase/client';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Session, User } from '@supabase/supabase-js';
@@ -23,34 +23,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // Check if we have a session
-    const getSession = async () => {
-      const { data, error } = await supabase.auth.getSession();
-      
-      if (error) {
-        console.error('Error getting session:', error);
-        return;
-      }
-      
-      setSession(data.session);
-      setUser(data.session?.user ?? null);
-      setLoading(false);
-    };
-
-    getSession();
-
-    // Listen for auth changes
+    // First set up the auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log("Auth state changed:", _event, session);
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
     });
+
+    // Then check for existing session
+    const getSession = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          console.error('Error getting session:', error);
+          return;
+        }
+        
+        console.log("Got session:", data.session);
+        setSession(data.session);
+        setUser(data.session?.user ?? null);
+      } catch (err) {
+        console.error("Session retrieval error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    getSession();
 
     return () => subscription.unsubscribe();
   }, []);
 
   const signIn = async (email: string, password: string) => {
     try {
+      setLoading(true);
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
@@ -65,29 +73,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       toast.error(error.message || 'Error signing in');
       console.error('Error signing in:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const signUp = async (email: string, password: string) => {
     try {
-      const { error } = await supabase.auth.signUp({
+      setLoading(true);
+      const { error, data } = await supabase.auth.signUp({
         email,
         password,
+        options: {
+          // Skip email verification
+          emailRedirectTo: window.location.origin + '/login',
+          data: {
+            email: email,
+          }
+        }
       });
 
       if (error) {
         throw error;
       }
 
-      toast.success('Signed up successfully, please check your email for verification');
+      if (data.user) {
+        // Auto sign in after sign up
+        await signIn(email, password);
+        toast.success('Signed up and logged in successfully!');
+      } else {
+        toast.success('Signed up successfully');
+        navigate('/login');
+      }
     } catch (error: any) {
       toast.error(error.message || 'Error signing up');
       console.error('Error signing up:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
   const signOut = async () => {
     try {
+      setLoading(true);
       const { error } = await supabase.auth.signOut();
       
       if (error) {
@@ -99,6 +127,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       toast.error(error.message || 'Error signing out');
       console.error('Error signing out:', error);
+    } finally {
+      setLoading(false);
     }
   };
 

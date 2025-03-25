@@ -6,8 +6,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, UserPlus } from "lucide-react";
-import { toast } from "sonner";
-import { supabase } from "@/utils/supabase";
 
 export function RegisterForm() {
   const { signUp } = useAuth();
@@ -56,33 +54,6 @@ export function RegisterForm() {
     return isValid;
   };
 
-  const checkExistingUser = async (email: string) => {
-    try {
-      const { data, error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          shouldCreateUser: false,
-        },
-      });
-      
-      // If there's no error and data contains something, the user exists
-      if (!error) {
-        return true;
-      }
-      
-      // Check if the error message indicates user doesn't exist
-      if (error.message.includes("Email not confirmed") || 
-          error.message.includes("Invalid login credentials")) {
-        return true;
-      }
-      
-      return false;
-    } catch (error) {
-      console.error("Error checking existing user:", error);
-      return false;
-    }
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -90,17 +61,9 @@ export function RegisterForm() {
 
     setIsLoading(true);
     try {
-      // Check if user already exists
-      const userExists = await checkExistingUser(email);
-      
-      if (userExists) {
-        toast.error("You already have an account. Please login instead.");
-        navigate("/login");
-        return;
-      }
-      
-      // If user doesn't exist, proceed with signup
       await signUp(email, password);
+    } catch (error) {
+      console.error("Registration error:", error);
     } finally {
       setIsLoading(false);
     }
