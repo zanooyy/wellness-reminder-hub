@@ -1,8 +1,9 @@
 
 import { useState, useEffect } from "react";
-import { supabase, Reminder } from "@/utils/supabase";
+import { Reminder } from "@/utils/supabase";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 export function useReminders() {
   const { user } = useAuth();
@@ -21,6 +22,7 @@ export function useReminders() {
     
     setLoading(true);
     try {
+      console.log("Fetching reminders for user:", user.id);
       const { data, error } = await supabase
         .from("reminders")
         .select("*")
@@ -29,6 +31,7 @@ export function useReminders() {
 
       if (error) throw error;
       
+      console.log("Reminders fetched:", data?.length || 0);
       setReminders(data || []);
     } catch (error: any) {
       console.error("Error fetching reminders:", error);
