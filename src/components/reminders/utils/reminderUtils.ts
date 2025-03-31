@@ -42,7 +42,7 @@ export const isReminderDueSoon = (reminderTime: string): boolean => {
   return timeDiff <= 30 * 60 * 1000;
 };
 
-// Improved precision for checking due reminders
+// Improved precision for checking due reminders - fixing timing issues
 export const checkDueReminders = (
   reminders: Reminder[], 
   playAlarmSound: (id: string) => void, 
@@ -55,12 +55,8 @@ export const checkDueReminders = (
   const now = new Date();
   const currentHour = now.getHours();
   const currentMinute = now.getMinutes();
-  const currentSeconds = now.getSeconds();
   
-  // Only check when we're within the first 10 seconds of a minute
-  // This helps ensure we don't miss the exact minute
-  if (currentSeconds > 10) return [];
-  
+  // Check reminders more precisely - include all reminders for the current minute
   const dueReminders = reminders.filter(reminder => {
     // Skip snoozed reminders
     if (isReminderSnoozed && isReminderSnoozed(reminder.id)) {

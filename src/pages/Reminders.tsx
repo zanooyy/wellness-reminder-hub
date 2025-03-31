@@ -10,30 +10,29 @@ import { saveThemePreference, getThemePreference } from "@/utils/supabase";
 
 const Reminders = () => {
   const { theme, setTheme } = useTheme();
-  const { user } = useAuth();
+  const { user, bypassAuth } = useAuth();
   
   useEffect(() => {
-    // Load theme preference from profile when component mounts
+    // Load theme preference when component mounts
     const loadThemePreference = async () => {
-      if (user) {
-        const savedTheme = await getThemePreference(user.id);
-        if (savedTheme) {
-          setTheme(savedTheme);
-        }
+      // If auth is bypassed, we'll use null for userId
+      const userId = bypassAuth ? null : user?.id;
+      const savedTheme = await getThemePreference(userId);
+      if (savedTheme) {
+        setTheme(savedTheme);
       }
     };
     
     loadThemePreference();
-  }, [user, setTheme]);
+  }, [user, setTheme, bypassAuth]);
   
   const toggleTheme = async () => {
     const newTheme = theme === "dark" ? "light" : "dark";
     setTheme(newTheme);
     
-    // Save theme preference to profile
-    if (user) {
-      await saveThemePreference(user.id, newTheme);
-    }
+    // Save theme preference - if auth is bypassed, we'll use null for userId
+    const userId = bypassAuth ? null : user?.id;
+    await saveThemePreference(userId || '', newTheme);
   };
 
   return (
