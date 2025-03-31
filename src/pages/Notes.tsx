@@ -10,29 +10,33 @@ import { saveThemePreference, getThemePreference } from "@/utils/supabase";
 
 const Notes = () => {
   const { theme, setTheme } = useTheme();
-  const { user, bypassAuth } = useAuth();
+  const { user } = useAuth();
   
   useEffect(() => {
     // Load theme preference when component mounts
     const loadThemePreference = async () => {
-      // If auth is bypassed, we'll use null for userId
-      const userId = bypassAuth ? null : user?.id;
-      const savedTheme = await getThemePreference(userId);
-      if (savedTheme) {
-        setTheme(savedTheme);
+      const userId = user?.id;
+      if (userId) {
+        const savedTheme = await getThemePreference(userId);
+        if (savedTheme) {
+          setTheme(savedTheme);
+        }
       }
     };
     
-    loadThemePreference();
-  }, [user, setTheme, bypassAuth]);
+    if (user) {
+      loadThemePreference();
+    }
+  }, [user, setTheme]);
   
   const toggleTheme = async () => {
     const newTheme = theme === "dark" ? "light" : "dark";
     setTheme(newTheme);
     
-    // Save theme preference - if auth is bypassed, we'll use null for userId
-    const userId = bypassAuth ? null : user?.id;
-    await saveThemePreference(userId || '', newTheme);
+    // Save theme preference if user is logged in
+    if (user?.id) {
+      await saveThemePreference(user.id, newTheme);
+    }
   };
 
   return (

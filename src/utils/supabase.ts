@@ -50,19 +50,13 @@ export const saveThemePreference = async (userId: string, theme: string) => {
   try {
     console.log(`Saving theme preference "${theme}" for user ${userId}`);
     
-    // Save to localStorage regardless of user auth status
-    localStorage.setItem('theme-preference', theme);
-    
-    // Only save to database if we have a valid userId
-    if (userId) {
-      const { error } = await supabase
-        .from('profiles')
-        .update({ theme_preference: theme })
-        .eq('id', userId);
-        
-      if (error) {
-        console.error('Error saving theme preference to database:', error);
-      }
+    const { error } = await supabase
+      .from('profiles')
+      .update({ theme_preference: theme })
+      .eq('id', userId);
+      
+    if (error) {
+      console.error('Error saving theme preference to database:', error);
     }
     
     return true;
@@ -75,15 +69,10 @@ export const saveThemePreference = async (userId: string, theme: string) => {
 // Function to retrieve theme preference from profile
 export const getThemePreference = async (userId: string | null): Promise<string | null> => {
   try {
-    // First check if we have a theme preference in localStorage
-    const localTheme = localStorage.getItem('theme-preference');
-    
-    // If no userId or bypassing auth, just return the local theme
     if (!userId) {
-      return localTheme;
+      return null;
     }
     
-    // Then check in the database
     const { data, error } = await supabase
       .from('profiles')
       .select('theme_preference')
@@ -92,19 +81,12 @@ export const getThemePreference = async (userId: string | null): Promise<string 
       
     if (error) {
       console.error('Error getting theme preference from database:', error);
-      return localTheme;
+      return null;
     }
     
-    // Update localStorage if we got a theme from the database
-    if (data?.theme_preference) {
-      localStorage.setItem('theme-preference', data.theme_preference);
-      return data.theme_preference;
-    }
-    
-    return localTheme;
+    return data?.theme_preference || null;
   } catch (error) {
     console.error('Error getting theme preference:', error);
-    // Fall back to localStorage if the database query fails
-    return localStorage.getItem('theme-preference');
+    return null;
   }
 };

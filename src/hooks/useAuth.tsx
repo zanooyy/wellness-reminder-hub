@@ -12,13 +12,13 @@ interface AuthContextType {
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
-  bypassAuth: boolean; // New property to bypass auth
+  bypassAuth: boolean; // This will now be false
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// Enable this to bypass authentication (for development)
-const BYPASS_AUTH = true; 
+// Disable bypass authentication
+const BYPASS_AUTH = false; 
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -28,12 +28,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
 
   useEffect(() => {
-    // If bypassing auth, set loading to false immediately
-    if (bypassAuth) {
-      setLoading(false);
-      return;
-    }
-
     // First set up the auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       console.log("Auth state changed:", _event, session);
@@ -65,18 +59,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     getSession();
 
     return () => subscription.unsubscribe();
-  }, [bypassAuth]);
+  }, []);
 
   const signIn = async (email: string, password: string) => {
     try {
       setLoading(true);
-      
-      if (bypassAuth) {
-        // Simulate successful sign in when bypassing auth
-        toast.success('Signed in successfully (Auth bypassed)');
-        navigate('/dashboard');
-        return;
-      }
       
       const { error } = await supabase.auth.signInWithPassword({
         email,
@@ -100,13 +87,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (email: string, password: string) => {
     try {
       setLoading(true);
-      
-      if (bypassAuth) {
-        // Simulate successful sign up when bypassing auth
-        toast.success('Signed up and logged in successfully (Auth bypassed)');
-        navigate('/dashboard');
-        return;
-      }
       
       const { error, data } = await supabase.auth.signUp({
         email,
@@ -143,13 +123,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     try {
       setLoading(true);
-      
-      if (bypassAuth) {
-        // Simulate sign out when bypassing auth
-        toast.success('Signed out successfully (Auth bypassed)');
-        navigate('/login');
-        return;
-      }
       
       const { error } = await supabase.auth.signOut();
       

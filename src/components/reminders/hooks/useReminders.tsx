@@ -5,45 +5,14 @@ import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
 
 export function useReminders() {
-  const { user, bypassAuth } = useAuth();
+  const { user } = useAuth();
   const [reminders, setReminders] = useState<Reminder[]>([]);
   const [loading, setLoading] = useState(true);
   const [sortOrder, setSortOrder] = useState<"time" | "name">("time");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
 
-  // Mock data for when auth is bypassed
-  const mockReminders: Reminder[] = [
-    {
-      id: "mock-1",
-      user_id: "mock-user",
-      medicine_name: "Paracetamol",
-      dosage: "500mg",
-      frequency: "daily",
-      time: new Date().toTimeString().slice(0, 5), // Current time for testing
-      notes: "Take with water",
-      created_at: new Date().toISOString(),
-    },
-    {
-      id: "mock-2",
-      user_id: "mock-user",
-      medicine_name: "Vitamin C",
-      dosage: "1000mg",
-      frequency: "daily",
-      time: new Date(Date.now() + 2 * 60000).toTimeString().slice(0, 5), // 2 minutes from now
-      notes: "Take after breakfast",
-      created_at: new Date().toISOString(),
-    }
-  ];
-
   // Fetch reminders from Supabase
   const fetchReminders = async () => {
-    // If bypassing auth, use mock data
-    if (bypassAuth) {
-      setReminders(mockReminders);
-      setLoading(false);
-      return;
-    }
-    
     if (!user) return;
     
     setLoading(true);
@@ -67,13 +36,6 @@ export function useReminders() {
 
   // Delete a reminder
   const deleteReminder = async (id: string) => {
-    // If bypassing auth, just remove from local state
-    if (bypassAuth) {
-      setReminders(reminders.filter(reminder => reminder.id !== id));
-      toast.success("Reminder deleted successfully");
-      return;
-    }
-    
     try {
       const { error } = await supabase
         .from("reminders")
@@ -105,8 +67,10 @@ export function useReminders() {
 
   // Initialize on component mount
   useEffect(() => {
-    fetchReminders();
-  }, [user, bypassAuth]);
+    if (user) {
+      fetchReminders();
+    }
+  }, [user, sortOrder, sortDirection]);
 
   return {
     reminders,
