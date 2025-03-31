@@ -7,6 +7,7 @@ export function useNotifications() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(false);
   const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | "default">("default");
   const [snoozedReminders, setSnoozedReminders] = useState<Record<string, Date>>({});
+  const [serviceWorkerReady, setServiceWorkerReady] = useState(false);
 
   // Check notification permission and update state
   const checkNotificationPermission = () => {
@@ -36,6 +37,11 @@ export function useNotifications() {
         setNotificationsEnabled(true);
         toast.success("Notifications enabled");
         
+        // Register for service worker updates if not already registered
+        if ('serviceWorker' in navigator && !serviceWorkerReady) {
+          registerServiceWorker();
+        }
+        
         // Send a test notification
         new Notification("Medicine Reminder", {
           body: "You will now receive notifications for your medicine reminders",
@@ -50,34 +56,86 @@ export function useNotifications() {
     }
   };
 
+  // Register service worker
+  const registerServiceWorker = async () => {
+    if (!('serviceWorker' in navigator)) {
+      console.log('Service workers are not supported');
+      return false;
+    }
+
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js');
+      console.log('ServiceWorker registration successful with scope:', registration.scope);
+      
+      // Wait for the service worker to be ready
+      if (registration.installing) {
+        registration.installing.addEventListener('statechange', (e) => {
+          if ((e.target as ServiceWorker).state === 'activated') {
+            setServiceWorkerReady(true);
+          }
+        });
+      } else if (registration.waiting) {
+        registration.waiting.addEventListener('statechange', (e) => {
+          if ((e.target as ServiceWorker).state === 'activated') {
+            setServiceWorkerReady(true);
+          }
+        });
+      } else if (registration.active) {
+        setServiceWorkerReady(true);
+      }
+      
+      // Set up message listener for service worker
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data && event.data.type === 'NOTIFICATION_CLICKED') {
+          const { id, action } = event.data.payload;
+          console.log('Notification clicked in service worker:', id, action);
+          
+          // Handle actions from service worker
+          if (action === 'taken') {
+            toast.success(`Marked reminder as taken`);
+          }
+        } else if (event.data && event.data.type === 'SYNC_REMINDERS') {
+          // Trigger a sync of reminders
+          console.log('Service worker requested reminders sync');
+        }
+      });
+      
+      return true;
+    } catch (error) {
+      console.error("Service worker registration failed:", error);
+      return false;
+    }
+  };
+
   // Schedule upcoming notifications when app goes to background
   const scheduleUpcomingNotifications = (reminders: Reminder[]) => {
     if (!notificationsEnabled || Notification.permission !== 'granted') return;
+    if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return;
     
-    const upcomingReminders = getUpcomingReminders(reminders, 60); // Next 60 minutes
+    console.log('Scheduling upcoming reminders for background notification');
     
-    if (upcomingReminders.length > 0) {
-      // Schedule notifications for upcoming reminders
-      upcomingReminders.forEach(reminder => {
-        const [hours, minutes] = reminder.time.split(':').map(Number);
-        const reminderTime = new Date();
-        reminderTime.setHours(hours, minutes, 0, 0);
-        
-        const now = new Date();
-        const delayMs = reminderTime.getTime() - now.getTime();
-        
-        if (delayMs > 0) {
-          // Use service worker to schedule notification
-          if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.controller.postMessage({
-              type: 'SCHEDULE_NOTIFICATION',
-              payload: {
-                id: reminder.id,
-                title: `Medicine Reminder: ${reminder.medicine_name}`,
-                body: reminder.dosage ? `Dosage: ${reminder.dosage}` : "Time to take your medicine",
-                time: delayMs
-              }
+    // Tell the service worker about all reminders
+    navigator.serviceWorker.controller.postMessage({
+      type: 'SYNC_REMINDERS',
+      payload: {
+        reminders: reminders
+      }
+    });
+    
+    // Try to register periodic sync if supported
+    if ('periodicSync' in navigator.serviceWorker) {
+      navigator.serviceWorker.ready.then(registration => {
+        // @ts-ignore - Periodic sync is not in the TypeScript definitions yet
+        if (registration.periodicSync) {
+          try {
+            // @ts-ignore
+            registration.periodicSync.register('reminder-sync', {
+              minInterval: 60 * 60 * 1000 // Once per hour
+            }).catch(err => {
+              console.log('Periodic sync registration failed:', err);
             });
+          } catch (e) {
+            console.log('Periodic sync error:', e);
           }
         }
       });
@@ -136,21 +194,6 @@ export function useNotifications() {
     }
   };
 
-  // Initialize notification service worker
-  const initializeServiceWorker = () => {
-    if ('serviceWorker' in navigator) {
-      try {
-        navigator.serviceWorker.register('/sw.js').then(function(registration) {
-          console.log('ServiceWorker registration successful with scope: ', registration.scope);
-        }).catch(function(err) {
-          console.log('ServiceWorker registration failed: ', err);
-        });
-      } catch (error) {
-        console.error("Service worker registration failed:", error);
-      }
-    }
-  };
-
   // Snooze a reminder for the specified minutes
   const snoozeReminder = (reminderId: string, minutes: number) => {
     const snoozeUntil = new Date(new Date().getTime() + minutes * 60000);
@@ -175,6 +218,18 @@ export function useNotifications() {
     return snoozeUntil;
   };
 
+  // Cancel a scheduled notification
+  const cancelNotification = (reminderId: string) => {
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'CANCEL_NOTIFICATION',
+        payload: {
+          id: reminderId
+        }
+      });
+    }
+  };
+
   // Check if a reminder is currently snoozed
   const isReminderSnoozed = (reminderId: string): boolean => {
     return !!(snoozedReminders[reminderId] && snoozedReminders[reminderId] > new Date());
@@ -194,7 +249,7 @@ export function useNotifications() {
   // Initialize on component mount
   useEffect(() => {
     checkNotificationPermission();
-    initializeServiceWorker();
+    registerServiceWorker();
     
     // Load saved snoozed reminders from localStorage
     const savedSnoozed = localStorage.getItem('snoozedReminders');
@@ -211,6 +266,20 @@ export function useNotifications() {
         console.error("Error parsing saved snoozed reminders:", e);
       }
     }
+
+    // Setup visibility change handler
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && notificationsEnabled) {
+        // App is going to background, dispatch event to collect reminders
+        window.dispatchEvent(new CustomEvent('app:background'));
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   // Save snoozed reminders to localStorage when they change
@@ -223,11 +292,13 @@ export function useNotifications() {
   return {
     notificationsEnabled,
     notificationPermission,
+    serviceWorkerReady,
     requestNotificationPermission,
     scheduleUpcomingNotifications,
     getUpcomingReminders,
     sendNotification,
     snoozeReminder,
+    cancelNotification,
     isReminderSnoozed,
     getSnoozeRemaining
   };

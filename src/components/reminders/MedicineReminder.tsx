@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Reminder } from "@/utils/supabase";
@@ -9,40 +8,35 @@ import {
   ArrowUpDown, VolumeX, Volume2, Settings, Music, ArrowLeft 
 } from "lucide-react";
 
-// Custom hooks
 import { useReminders } from "./hooks/useReminders";
 import { useNotifications } from "./hooks/useNotifications";
 import { useReminderSounds } from "./hooks/useReminderSounds";
 
-// Components
 import { ReminderCard } from "./components/ReminderCard";
 import { ReminderForm, AddReminderButton } from "./components/ReminderForm";
 import { EmptyReminders } from "./components/EmptyReminders";
 import { NotificationSettingsDialog } from "./components/NotificationSettingsDialog";
 import { NotificationPermissionAlert } from "./components/NotificationAlert";
 
-// Utilities
 import { checkDueReminders, getNextOccurrence } from "./utils/reminderUtils";
 
 export function MedicineReminder() {
-  // State for form dialog
   const [openDialog, setOpenDialog] = useState(false);
   const [currentReminder, setCurrentReminder] = useState<Reminder | null>(null);
   const [soundsDialogOpen, setSoundsDialogOpen] = useState(false);
-  
-  // Custom hooks
+
   const { 
     reminders, loading, sortOrder, toggleSort, 
-    fetchReminders, deleteReminder 
+    fetchReminders, deleteReminder, createReminder, updateReminder
   } = useReminders();
-  
+
   const { 
-    notificationsEnabled, notificationPermission, 
+    notificationsEnabled, notificationPermission, serviceWorkerReady,
     requestNotificationPermission, sendNotification,
     scheduleUpcomingNotifications, getUpcomingReminders,
-    snoozeReminder, isReminderSnoozed 
+    snoozeReminder, cancelNotification, isReminderSnoozed 
   } = useNotifications();
-  
+
   const { 
     soundEnabled, selectedSound, activeAlarms, alarmAudioRef,
     volume, customSounds, getAllSounds,
@@ -50,23 +44,22 @@ export function MedicineReminder() {
     playAlarmSound, playTestSound, stopAllAlarms, toggleSound,
     addCustomSound, removeCustomSound
   } = useReminderSounds();
-  
-  // Handle visibility change (page hidden/visible)
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden' && notificationsEnabled) {
-        // App is going to background, schedule upcoming notifications
+        console.log("App going to background, scheduling notifications");
         scheduleUpcomingNotifications(reminders);
+      } else if (document.visibilityState === 'visible') {
+        console.log("App becoming visible, refreshing data");
+        fetchReminders();
       }
     };
-    
-    // Add event listener for when the page is about to be closed
+
     const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-      // Check if there are any upcoming reminders in the next hour
-      const upcomingReminders = getUpcomingReminders(reminders, 60); // 60 minutes
+      const upcomingReminders = getUpcomingReminders(reminders, 60);
       
       if (upcomingReminders.length > 0 && notificationsEnabled) {
-        // Send notification about upcoming reminders
         const nextReminder = upcomingReminders[0];
         try {
           new Notification("Medicine Reminder - App Closed", {
@@ -77,43 +70,40 @@ export function MedicineReminder() {
           console.error("Error sending notification:", error);
         }
         
-        // Schedule background notifications
         scheduleUpcomingNotifications(reminders);
       }
     };
-    
-    // Listen for visibility changes to handle when app is in background
+
     document.addEventListener('visibilitychange', handleVisibilityChange);
     window.addEventListener('beforeunload', handleBeforeUnload);
-    
-    // Clean up on component unmount
+    window.addEventListener('app:background', () => scheduleUpcomingNotifications(reminders));
+
+    if (serviceWorkerReady && reminders.length > 0 && notificationsEnabled) {
+      scheduleUpcomingNotifications(reminders);
+    }
+
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('app:background', () => scheduleUpcomingNotifications(reminders));
     };
-  }, [reminders, notificationsEnabled]);
-  
-  // Set up timers for all reminders
+  }, [reminders, notificationsEnabled, serviceWorkerReady]);
+
   useEffect(() => {
     if (reminders.length === 0) return;
-    
-    // Clear any existing timers
+
     const timers: NodeJS.Timeout[] = [];
-    
-    // Set up precise timers for each reminder
+
     reminders.forEach(reminder => {
       const nextOccurrence = getNextOccurrence(reminder.time);
       const timeUntilReminder = nextOccurrence.getTime() - Date.now();
-      
-      // Only set timers for reminders in the future
+
       if (timeUntilReminder > 0) {
         const timer = setTimeout(() => {
-          // Only trigger if not snoozed
           if (!isReminderSnoozed || !isReminderSnoozed(reminder.id)) {
             playAlarmSound(reminder.id);
             sendNotification(reminder);
-            
-            // Show toast notification
+
             toast.info(
               <div className="flex flex-col gap-1">
                 <div className="font-bold">Medicine Reminder</div>
@@ -135,12 +125,11 @@ export function MedicineReminder() {
             );
           }
         }, timeUntilReminder);
-        
+
         timers.push(timer);
       }
     });
-    
-    // Check for due reminders immediately when component mounts or reminders change
+
     const checkNow = () => {
       const dueReminders = checkDueReminders(
         reminders, 
@@ -149,13 +138,12 @@ export function MedicineReminder() {
         sendNotification,
         isReminderSnoozed
       );
-      
+
       if (dueReminders.length > 0) {
         dueReminders.forEach(reminder => {
           playAlarmSound(reminder.id);
           sendNotification(reminder);
-          
-          // Show toast notification
+
           toast.info(
             <div className="flex flex-col gap-1">
               <div className="font-bold">Medicine Reminder</div>
@@ -178,37 +166,56 @@ export function MedicineReminder() {
         });
       }
     };
-    
-    // Check immediately
+
     checkNow();
-    
-    // Also perform regular checks every 15 seconds as a fallback
+
     const regularInterval = setInterval(checkNow, 15000);
-    
+
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      const swMessageHandler = (event: MessageEvent) => {
+        if (event.data && event.data.type === 'NOTIFICATION_CLICKED') {
+          const { id, action } = event.data.payload;
+          if (action === 'taken') {
+          }
+        } else if (event.data && event.data.type === 'SYNC_REMINDERS') {
+          scheduleUpcomingNotifications(reminders);
+        }
+      };
+
+      navigator.serviceWorker.addEventListener('message', swMessageHandler);
+
+      return () => {
+        timers.forEach(clearTimeout);
+        clearInterval(regularInterval);
+        navigator.serviceWorker.removeEventListener('message', swMessageHandler);
+      };
+    }
+
     return () => {
-      // Clear all timers on cleanup
       timers.forEach(clearTimeout);
       clearInterval(regularInterval);
     };
-  }, [reminders, soundEnabled, notificationsEnabled, selectedSound]);
-  
-  // Open dialog to edit a reminder
+  }, [reminders, soundEnabled, notificationsEnabled, selectedSound, serviceWorkerReady]);
+
   const openEditDialog = (reminder: Reminder) => {
     setCurrentReminder(reminder);
     setOpenDialog(true);
   };
-  
-  // Reset form data
+
   const resetForm = () => {
     setCurrentReminder(null);
   };
 
-  // Handle snoozing a reminder
   const handleSnooze = (id: string, minutes: number) => {
-    // Stop any active alarms for this reminder
     if (activeAlarms.includes(id)) {
       stopAllAlarms();
     }
+  };
+
+  const handleDeleteReminder = async (id: string) => {
+    cancelNotification(id);
+    stopAllAlarms();
+    await deleteReminder(id);
   };
 
   return (
@@ -325,10 +332,8 @@ export function MedicineReminder() {
         </div>
       </div>
 
-      {/* Hidden audio element for notification sound */}
       <audio id="reminder-sound" ref={alarmAudioRef} />
 
-      {/* Notification permission alerts */}
       <NotificationPermissionAlert 
         notificationsEnabled={notificationsEnabled}
         notificationPermission={notificationPermission}
@@ -355,7 +360,7 @@ export function MedicineReminder() {
               reminder={reminder}
               isActive={activeAlarms.includes(reminder.id)}
               onEdit={openEditDialog}
-              onDelete={deleteReminder}
+              onDelete={handleDeleteReminder}
               onSnooze={handleSnooze}
             />
           ))}

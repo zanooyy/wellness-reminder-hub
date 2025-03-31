@@ -29,7 +29,10 @@ export function useReminders() {
         .eq("user_id", user.id)
         .order(sortOrder, { ascending: sortDirection === "asc" });
 
-      if (error) throw error;
+      if (error) {
+        console.error("Supabase error:", error);
+        throw error;
+      }
       
       console.log("Reminders fetched:", data?.length || 0);
       setReminders(data || []);
@@ -41,6 +44,57 @@ export function useReminders() {
     }
   };
 
+  // Create a new reminder
+  const createReminder = async (reminder: Omit<Reminder, 'id' | 'user_id' | 'created_at'>) => {
+    if (!user) return null;
+    
+    try {
+      const newReminder = {
+        ...reminder,
+        user_id: user.id,
+      };
+      
+      const { data, error } = await supabase
+        .from("reminders")
+        .insert([newReminder])
+        .select()
+        .single();
+
+      if (error) throw error;
+      
+      fetchReminders(); // Refresh the list
+      toast.success("Reminder created successfully");
+      return data;
+    } catch (error: any) {
+      console.error("Error creating reminder:", error);
+      toast.error("Failed to create reminder");
+      return null;
+    }
+  };
+
+  // Update a reminder
+  const updateReminder = async (id: string, updates: Partial<Reminder>) => {
+    if (!user) return false;
+    
+    try {
+      const { error } = await supabase
+        .from("reminders")
+        .update(updates)
+        .eq("id", id)
+        .eq("user_id", user.id);
+
+      if (error) throw error;
+      
+      fetchReminders(); // Refresh the list
+      toast.success("Reminder updated successfully");
+      return true;
+    } catch (error: any) {
+      console.error("Error updating reminder:", error);
+      toast.error("Failed to update reminder");
+      return false;
+    }
+  };
+
   // Delete a reminder
   const deleteReminder = async (id: string) => {
     if (!user) return;
@@ -49,7 +103,8 @@ export function useReminders() {
       const { error } = await supabase
         .from("reminders")
         .delete()
-        .eq("id", id);
+        .eq("id", id)
+        .eq("user_id", user.id);
 
       if (error) throw error;
       
@@ -69,9 +124,6 @@ export function useReminders() {
       setSortOrder(field);
       setSortDirection("asc");
     }
-    
-    // Re-fetch reminders with new sort
-    fetchReminders();
   };
 
   // Initialize on component mount
@@ -90,6 +142,8 @@ export function useReminders() {
     sortOrder,
     sortDirection,
     fetchReminders,
+    createReminder,
+    updateReminder,
     deleteReminder,
     toggleSort
   };
