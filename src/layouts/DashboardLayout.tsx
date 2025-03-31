@@ -27,6 +27,10 @@ export function DashboardLayout({ children }: DashboardLayoutProps) {
     );
   }
 
+  if (!user) {
+    return null; // This prevents flash of content before redirect
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
       <Header />

@@ -13,7 +13,11 @@ export function useReminders() {
 
   // Fetch reminders from Supabase
   const fetchReminders = async () => {
-    if (!user) return;
+    if (!user) {
+      setReminders([]);
+      setLoading(false);
+      return;
+    }
     
     setLoading(true);
     try {
@@ -36,6 +40,8 @@ export function useReminders() {
 
   // Delete a reminder
   const deleteReminder = async (id: string) => {
+    if (!user) return;
+    
     try {
       const { error } = await supabase
         .from("reminders")
@@ -69,6 +75,9 @@ export function useReminders() {
   useEffect(() => {
     if (user) {
       fetchReminders();
+    } else {
+      setReminders([]);
+      setLoading(false);
     }
   }, [user, sortOrder, sortDirection]);
 
