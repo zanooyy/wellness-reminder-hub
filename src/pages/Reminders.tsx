@@ -1,4 +1,3 @@
-
 import { useEffect, useState } from "react";
 import { DashboardLayout } from "@/layouts/DashboardLayout";
 import { MedicineReminder } from "@/components/reminders/MedicineReminder";
@@ -16,7 +15,6 @@ const Reminders = () => {
   const [serviceWorkerReady, setServiceWorkerReady] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   
-  // Register service worker for notifications
   const registerServiceWorker = async () => {
     if (!('serviceWorker' in navigator)) {
       toast.error("Service workers are not supported in this browser");
@@ -25,12 +23,23 @@ const Reminders = () => {
     
     try {
       setIsRegistering(true);
-      const registration = await navigator.serviceWorker.register('/sw.js');
+      
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const registration of registrations) {
+        if (registration.scope.includes('/')) {
+          await registration.update();
+          console.log('Updated existing service worker');
+        }
+      }
+      
+      const registration = await navigator.serviceWorker.register('/sw.js', { 
+        scope: '/',
+        updateViaCache: 'none'
+      });
+      
       console.log('ServiceWorker registration successful with scope:', registration.scope);
       toast.success("Notification service started");
-      setServiceWorkerReady(true);
       
-      // Wait for the service worker to be ready
       if (registration.installing) {
         registration.installing.addEventListener('statechange', (e) => {
           if ((e.target as ServiceWorker).state === 'activated') {
@@ -47,16 +56,28 @@ const Reminders = () => {
         setServiceWorkerReady(true);
       }
       
+      if (Notification.permission !== 'granted' && Notification.permission !== 'denied') {
+        const permission = await Notification.requestPermission();
+        if (permission === 'granted') {
+          toast.success("Notifications enabled");
+        } else {
+          toast.warning("Notifications disabled. Some features may not work properly.");
+        }
+      }
+      
     } catch (error) {
       console.error("Service worker registration failed:", error);
-      toast.error("Failed to start notification service");
+      toast.error("Failed to start notification service. Retrying...");
+      
+      setTimeout(() => {
+        registerServiceWorker();
+      }, 2000);
     } finally {
       setIsRegistering(false);
     }
   };
   
   useEffect(() => {
-    // Load theme preference when component mounts
     const loadThemePreference = async () => {
       const userId = user?.id;
       if (userId) {
@@ -75,15 +96,53 @@ const Reminders = () => {
       loadThemePreference();
     }
     
-    // Check for service worker
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.ready.then(() => {
-        setServiceWorkerReady(true);
-        console.log("Service worker is ready");
-      }).catch(() => {
-        console.log("Service worker not ready, registering...");
-        registerServiceWorker();
+      const checkServiceWorker = async () => {
+        try {
+          const registrations = await navigator.serviceWorker.getRegistrations();
+          
+          const activeServiceWorker = registrations.find(reg => 
+            reg.active && reg.scope.includes(window.location.origin)
+          );
+          
+          if (activeServiceWorker) {
+            console.log("Active service worker found:", activeServiceWorker.scope);
+            setServiceWorkerReady(true);
+            
+            activeServiceWorker.update()
+              .then(() => console.log("Service worker updated"))
+              .catch(err => console.error("Error updating service worker:", err));
+          } else {
+            console.log("No active service worker found, registering...");
+            registerServiceWorker();
+          }
+        } catch (error) {
+          console.error("Error checking service worker:", error);
+          registerServiceWorker();
+        }
+      };
+      
+      checkServiceWorker();
+      
+      const keepaliveInterval = setInterval(() => {
+        if (navigator.serviceWorker.controller) {
+          navigator.serviceWorker.controller.postMessage({
+            type: 'KEEPALIVE',
+            payload: { timestamp: Date.now() }
+          });
+        }
+      }, 60000);
+      
+      navigator.serviceWorker.addEventListener('message', (event) => {
+        if (event.data?.type === 'SYNC_REMINDERS') {
+          console.log('Service worker requested reminders sync');
+          window.dispatchEvent(new CustomEvent('sync-reminders'));
+        }
       });
+      
+      return () => {
+        clearInterval(keepaliveInterval);
+      };
     }
   }, [user, setTheme]);
   
@@ -91,7 +150,6 @@ const Reminders = () => {
     const newTheme = theme === "dark" ? "light" : "dark";
     setTheme(newTheme);
     
-    // Save theme preference if user is logged in
     if (user?.id) {
       try {
         await saveThemePreference(user.id, newTheme);
