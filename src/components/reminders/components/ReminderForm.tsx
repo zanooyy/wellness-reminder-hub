@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from "react";
 import { Reminder } from "@/utils/supabase";
 import { useAuth } from "@/hooks/useAuth";
-import { supabase } from "@/utils/supabase";
+import { supabase } from "@/integrations/supabase/client"; // Use the correct client import
 import { toast } from "sonner";
 import { 
   Dialog, DialogContent, DialogDescription, DialogFooter, 
@@ -36,6 +36,7 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Reset form when dialog opens/closes or current reminder changes
   useEffect(() => {
@@ -107,7 +108,21 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
       const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
       const filePath = `${user!.id}/${fileName}`;
       
-      // Create medicine-images bucket if it doesn't exist (handled by RLS)
+      // Create medicine-images bucket if it doesn't exist
+      try {
+        const { data: bucketData, error: bucketError } = await supabase.storage
+          .getBucket('medicine-images');
+        
+        if (bucketError && bucketError.message.includes('not found')) {
+          await supabase.storage.createBucket('medicine-images', {
+            public: true,
+          });
+        }
+      } catch (error) {
+        console.log("Bucket already exists or created previously");
+      }
+      
+      // Upload file to storage
       const { error: uploadError } = await supabase.storage
         .from('medicine-images')
         .upload(filePath, file);
@@ -132,12 +147,17 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (!user) return;
+    if (!user) {
+      toast.error("You must be logged in to save reminders");
+      return;
+    }
     
     if (!formData.medicine_name || !formData.time) {
       toast.error("Medicine name and time are required");
       return;
     }
+    
+    setIsSubmitting(true);
     
     try {
       let imageUrl = formData.image_url;
@@ -148,6 +168,7 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
           imageUrl = await uploadImage(imageFile);
         } catch (error: any) {
           toast.error(error.message || "Failed to upload image");
+          setIsSubmitting(false);
           return;
         }
       }
@@ -180,6 +201,32 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
         if (error) throw error;
         
         toast.success("Reminder added successfully");
+        
+        // Schedule this immediately if needed
+        if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+          const [hours, minutes] = formData.time.split(':').map(Number);
+          const reminderTime = new Date();
+          reminderTime.setHours(hours, minutes, 0, 0);
+          
+          if (reminderTime > new Date()) {
+            try {
+              navigator.serviceWorker.controller.postMessage({
+                type: 'SCHEDULE_NOTIFICATION',
+                payload: {
+                  id: Math.random().toString(36).substring(2, 15),
+                  title: `Medicine Reminder: ${formData.medicine_name}`,
+                  body: formData.dosage ? `Dosage: ${formData.dosage}` : "Time to take your medicine",
+                  time: reminderTime.getTime() - Date.now(),
+                  medicine: formData.medicine_name,
+                  dosage: formData.dosage,
+                  frequency: formData.frequency
+                }
+              });
+            } catch (e) {
+              console.error("Failed to schedule notification:", e);
+            }
+          }
+        }
       }
       
       // Close dialog and refresh reminders
@@ -187,7 +234,11 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
       onSuccess();
     } catch (error: any) {
       console.error("Error saving reminder:", error);
-      toast.error(currentReminder ? "Failed to update reminder" : "Failed to add reminder");
+      toast.error(currentReminder 
+        ? "Failed to update reminder. Please try again." 
+        : "Failed to add reminder. Please try again.");
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -317,8 +368,10 @@ export function ReminderForm({ open, setOpen, currentReminder, onSuccess }: Remi
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isUploading}>
-              {isUploading ? "Uploading..." : currentReminder ? "Update Reminder" : "Add Reminder"}
+            <Button type="submit" disabled={isSubmitting || isUploading}>
+              {(isUploading || isSubmitting) 
+                ? (isUploading ? "Uploading..." : "Saving...") 
+                : (currentReminder ? "Update Reminder" : "Add Reminder")}
             </Button>
           </DialogFooter>
         </form>

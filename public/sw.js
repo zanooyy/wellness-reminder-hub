@@ -13,6 +13,7 @@ self.addEventListener('activate', (event) => {
 // Store scheduled notifications
 const scheduledNotifications = new Map();
 const activeAlarms = new Map();
+const snoozedReminders = new Map();
 
 // Handle messages from the main application
 self.addEventListener('message', (event) => {
@@ -95,6 +96,9 @@ self.addEventListener('message', (event) => {
       activeAlarms.delete(id);
     }
     
+    // Set snooze
+    snoozedReminders.set(id, snoozeUntil);
+    
     console.log(`Notification ${id} snoozed until ${new Date(snoozeUntil).toLocaleTimeString()}`);
   } else if (event.data.type === 'CANCEL_NOTIFICATION') {
     const { id } = event.data.payload;
@@ -107,6 +111,10 @@ self.addEventListener('message', (event) => {
     
     if (activeAlarms.has(id)) {
       activeAlarms.delete(id);
+    }
+    
+    if (snoozedReminders.has(id)) {
+      snoozedReminders.delete(id);
     }
   } else if (event.data.type === 'SYNC_REMINDERS') {
     const { reminders } = event.data.payload;
@@ -121,6 +129,18 @@ self.addEventListener('message', (event) => {
       const now = new Date();
       let delayMs = reminderTime.getTime() - now.getTime();
       
+      // Skip if reminder is snoozed
+      if (snoozedReminders.has(reminder.id)) {
+        const snoozeUntil = snoozedReminders.get(reminder.id);
+        if (snoozeUntil > now.getTime()) {
+          console.log(`Reminder ${reminder.id} is snoozed until ${new Date(snoozeUntil).toLocaleTimeString()}`);
+          return;
+        } else {
+          // Snooze expired
+          snoozedReminders.delete(reminder.id);
+        }
+      }
+      
       // If time already passed today, schedule for tomorrow
       if (delayMs < 0) {
         delayMs += 24 * 60 * 60 * 1000; // Add 24 hours
@@ -128,18 +148,42 @@ self.addEventListener('message', (event) => {
       
       if (delayMs > 0 && delayMs < 24 * 60 * 60 * 1000) {
         // Schedule new notification
-        self.postMessage({
-          type: 'SCHEDULE_NOTIFICATION',
-          payload: {
-            id: reminder.id,
-            title: `Medicine Reminder: ${reminder.medicine_name}`,
+        console.log(`Scheduling notification for ${reminder.medicine_name} in ${Math.round(delayMs/60000)} minutes`);
+        
+        // Don't use postMessage here as it's meant for client->worker communication
+        // Instead, set up the notification directly
+        const timerId = setTimeout(() => {
+          self.registration.showNotification(`Medicine Reminder: ${reminder.medicine_name}`, {
             body: reminder.dosage ? `Dosage: ${reminder.dosage}` : "Time to take your medicine",
-            time: delayMs,
-            medicine: reminder.medicine_name,
-            dosage: reminder.dosage,
-            frequency: reminder.frequency
-          }
-        });
+            icon: '/favicon.ico',
+            badge: '/favicon.ico',
+            tag: reminder.id,
+            renotify: true,
+            requireInteraction: true,
+            vibrate: [200, 100, 200],
+            actions: [
+              {
+                action: 'snooze',
+                title: 'Snooze 5 min'
+              },
+              {
+                action: 'taken',
+                title: 'Taken'
+              }
+            ],
+            data: {
+              id: reminder.id,
+              medicine: reminder.medicine_name,
+              dosage: reminder.dosage,
+              frequency: reminder.frequency
+            }
+          });
+          
+          scheduledNotifications.delete(reminder.id);
+          activeAlarms.set(reminder.id, Date.now());
+        }, delayMs);
+        
+        scheduledNotifications.set(reminder.id, timerId);
       }
     });
   }
@@ -157,6 +201,7 @@ self.addEventListener('notificationclick', (event) => {
   if (action === 'snooze') {
     // Snooze for 5 minutes
     const snoozeTime = Date.now() + 5 * 60 * 1000;
+    snoozedReminders.set(notificationData.id, snoozeTime);
     
     // Create new timeout for reminder
     const timerId = setTimeout(() => {
@@ -180,40 +225,71 @@ self.addEventListener('notificationclick', (event) => {
           }
         ]
       });
+      
+      snoozedReminders.delete(notificationData.id);
     }, 5 * 60 * 1000);
     
     scheduledNotifications.set(notificationData.id, timerId);
     
-  } else {
-    // Focus on or open a window when notification is clicked
-    event.waitUntil(
-      clients.matchAll({ type: 'window' }).then((clientList) => {
-        // Check if there's already a window/tab open
-        for (const client of clientList) {
-          if (client.url.includes(self.location.origin) && 'focus' in client) {
-            client.postMessage({
-              type: 'NOTIFICATION_CLICKED',
-              payload: {
-                id: notificationData.id,
-                action: action
-              }
-            });
-            return client.focus();
-          }
-        }
-        // If no window/tab is open, open one
-        if (clients.openWindow) {
-          return clients.openWindow('/reminders');
-        }
-      })
-    );
+  } else if (action === 'taken') {
+    // Mark as taken
+    if (activeAlarms.has(notificationData.id)) {
+      activeAlarms.delete(notificationData.id);
+    }
   }
+  
+  // Focus on or open a window when notification is clicked
+  event.waitUntil(
+    clients.matchAll({ type: 'window' }).then((clientList) => {
+      // Check if there's already a window/tab open
+      for (const client of clientList) {
+        if (client.url.includes(self.location.origin) && 'focus' in client) {
+          client.postMessage({
+            type: 'NOTIFICATION_CLICKED',
+            payload: {
+              id: notificationData.id,
+              action: action
+            }
+          });
+          return client.focus();
+        }
+      }
+      // If no window/tab is open, open one
+      if (clients.openWindow) {
+        return clients.openWindow('/reminders');
+      }
+    })
+  );
 });
 
 // Handle notification closing
 self.addEventListener('notificationclose', (event) => {
   console.log('Notification closed:', event.notification.tag);
 });
+
+// Store reminders in IndexedDB for offline support
+let db;
+
+// Open IndexedDB
+const openDB = () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('remindersDB', 1);
+    
+    request.onerror = () => reject('Failed to open database');
+    
+    request.onsuccess = (event) => {
+      db = event.target.result;
+      resolve(db);
+    };
+    
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains('reminders')) {
+        db.createObjectStore('reminders', { keyPath: 'id' });
+      }
+    };
+  });
+};
 
 // Listen for periodic syncs if supported
 self.addEventListener('periodicsync', (event) => {
@@ -225,6 +301,50 @@ self.addEventListener('periodicsync', (event) => {
           clients[0].postMessage({
             type: 'SYNC_REMINDERS'
           });
+        } else {
+          // No clients available, try to show pending notifications from IndexedDB
+          openDB().then(() => {
+            const transaction = db.transaction(['reminders'], 'readonly');
+            const store = transaction.objectStore('reminders');
+            const getAll = store.getAll();
+            
+            getAll.onsuccess = () => {
+              const reminders = getAll.result;
+              if (reminders && reminders.length) {
+                // Handle the reminders directly in the service worker
+                reminders.forEach(reminder => {
+                  const [hours, minutes] = reminder.time.split(':').map(Number);
+                  const reminderTime = new Date();
+                  reminderTime.setHours(hours, minutes, 0, 0);
+                  
+                  const now = new Date();
+                  let delayMs = reminderTime.getTime() - now.getTime();
+                  
+                  // If time already passed today, schedule for tomorrow
+                  if (delayMs < 0) {
+                    delayMs += 24 * 60 * 60 * 1000; // Add 24 hours
+                  }
+                  
+                  if (delayMs > 0 && delayMs < 24 * 60 * 60 * 1000) {
+                    // Schedule notification
+                    const timerId = setTimeout(() => {
+                      self.registration.showNotification(`Medicine Reminder: ${reminder.medicine_name}`, {
+                        body: reminder.dosage ? `Dosage: ${reminder.dosage}` : "Time to take your medicine",
+                        icon: '/favicon.ico',
+                        badge: '/favicon.ico',
+                        tag: reminder.id,
+                        renotify: true,
+                        requireInteraction: true,
+                        vibrate: [200, 100, 200]
+                      });
+                    }, delayMs);
+                    
+                    scheduledNotifications.set(reminder.id, timerId);
+                  }
+                });
+              }
+            };
+          }).catch(err => console.error('Failed to access IndexedDB:', err));
         }
       })
     );
@@ -245,4 +365,41 @@ self.addEventListener('sync', (event) => {
       })
     );
   }
+});
+
+// Set up offline functionality
+self.addEventListener('fetch', event => {
+  const request = event.request;
+  
+  // Skip cross-origin requests
+  if (!request.url.includes(self.location.origin)) {
+    return;
+  }
+  
+  // Basic offline handling
+  event.respondWith(
+    fetch(request).catch(() => {
+      // Return cached assets when offline
+      return caches.match(request).then(response => {
+        if (response) {
+          return response;
+        }
+        
+        // For navigation requests, return the offline page
+        if (request.mode === 'navigate') {
+          return caches.match('/offline.html').then(offlineResponse => {
+            return offlineResponse || new Response('You are offline and the page could not be loaded.', {
+              status: 503,
+              headers: { 'Content-Type': 'text/plain' }
+            });
+          });
+        }
+        
+        return new Response('Failed to load resource while offline', {
+          status: 503,
+          headers: { 'Content-Type': 'text/plain' }
+        });
+      });
+    })
+  );
 });
